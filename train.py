@@ -13,6 +13,35 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from typing import Callable, Dict, List
 
+# Module-level cache for the Triton availability check.
+# None = not yet tested; True/False = result of the one-time probe.
+_TRITON_OK: bool | None = None
+
+
+def _triton_ok() -> bool:
+    """
+    Return True only if the environment can build Triton CUDA kernels.
+    Checks for Python.h (required by Triton's one-time C-extension build)
+    before ever touching Triton, so gcc is never invoked on nodes that lack
+    the headers.  Result is cached at module level — the check runs at most
+    once per process regardless of how many models are trained.
+    """
+    global _TRITON_OK
+    if _TRITON_OK is not None:
+        return _TRITON_OK
+    import sysconfig, pathlib
+    inc = sysconfig.get_path("include")
+    if inc and not (pathlib.Path(inc) / "Python.h").exists():
+        _TRITON_OK = False
+        return False
+    try:
+        import triton.runtime.driver as _td
+        _ = _td.active.get_current_target()
+        _TRITON_OK = True
+    except Exception:
+        _TRITON_OK = False
+    return _TRITON_OK
+
 
 def _spectral_loss(recon: torch.Tensor, clean: torch.Tensor, device: str) -> torch.Tensor:
     """
@@ -130,40 +159,9 @@ def train(
 
     # torch.compile — fuses ops and generates optimised GPU kernels.
     # Skip for the WaveletDenoiser (no trainable params, pure NumPy forward).
-    #
-    # torch.compile() is lazy: it doesn't actually build kernels until the
-    # first forward pass.  On HPC clusters the Triton CUDA backend's one-time
-    # C-extension build can fail because Python development headers (Python.h)
-    # are absent from GCC's include path.  The failure normally surfaces as a
-    # noisy InductorError mid-training, not at the torch.compile() call site.
-    #
-    # Fix: use _triton_ok() to probe the Triton driver *before* compile so the
-    # check happens exactly once and silently, without invoking gcc at all.
-    # If the probe fails, torch.compile is skipped and training proceeds on
-    # the uncompiled model (AMP and cuDNN benchmark still active).
-    def _triton_ok() -> bool:
-        """
-        Return True only if the environment can actually build Triton kernels.
-
-        Triton's CUDA driver compiles a small C extension (cuda_utils.c) on
-        first use; this requires Python development headers (Python.h).
-        We check for the header BEFORE touching Triton so that gcc is never
-        invoked and no temp-file noise appears in the logs.
-        """
-        import sysconfig
-        inc = sysconfig.get_path("include")          # e.g. /usr/include/python3.9
-        if inc:
-            import pathlib
-            if not (pathlib.Path(inc) / "Python.h").exists():
-                return False                         # headers missing → skip
-        # Headers present (or unknown); do a cheap Triton driver probe.
-        try:
-            import triton.runtime.driver as _td
-            _ = _td.active.get_current_target()
-            return True
-        except Exception:
-            return False
-
+    # _triton_ok() is defined at module level and cached after the first call,
+    # so the Python.h header check and any message print exactly once per
+    # process, not once per model.
     trainable = [p for p in model.parameters() if p.requires_grad]
     try:
         import config as _cfg
@@ -171,18 +169,19 @@ def train(
     except ImportError:
         _use_compile = False
     if _use_compile and trainable and device == "cuda" and hasattr(torch, "compile"):
+        _first_check = _TRITON_OK is None   # True only before the first call
         if _triton_ok():
             try:
                 model = torch.compile(model, mode="reduce-overhead")
-                if verbose:
+                if verbose and _first_check:
                     print("  torch.compile enabled (reduce-overhead)")
             except Exception as _e:
-                if verbose:
+                if verbose and _first_check:
                     print(f"  torch.compile skipped: {_e}")
         else:
-            if verbose:
-                print("  torch.compile skipped: Triton CUDA driver unavailable "
-                      "(Python.h missing on this node — training without compile)")
+            if verbose and _first_check:
+                print("  torch.compile skipped: Triton unavailable on this node "
+                      "(Python.h missing) — training without compile")
 
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
