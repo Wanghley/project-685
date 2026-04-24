@@ -131,9 +131,20 @@ def _save_run_config(run_dir: str, args) -> None:
 
 
 def main():
-    # Enable CuDNN benchmark for RTX 2080 Ti speedup (auto-tunes convolution algorithms)
+    # ── Global performance flags ──────────────────────────────────
+    # Use AMX (Apple Matrix Extensions) / TF32 on Ampere GPUs — free speedup
+    # for large matmuls with negligible precision loss.
+    torch.set_float32_matmul_precision("high")
+
     if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = True   # auto-tune conv algorithms
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    if torch.backends.mps.is_available():
+        # Allow ops not yet supported on MPS to silently fall back to CPU
+        # instead of raising an error (required for some Transformer ops).
+        os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
     args = parse_args()
     run_dir = _make_run_dir(args.results, args.tag)
@@ -142,9 +153,9 @@ def main():
     print("\n" + "=" * 60)
     print(f"SYSTEM INFO: Using device '{config.DEVICE}'")
     if config.DEVICE == "mps":
-        print("  -> Apple Silicon GPU (Metal) enabled!")
+        print(f"  -> Apple Silicon GPU (Metal) | {config.NUM_WORKERS} CPU loader workers")
     elif config.DEVICE == "cuda":
-        print("  -> NVIDIA GPU enabled!")
+        print(f"  -> NVIDIA GPU | {config.NUM_WORKERS} CPU loader workers | AMP enabled")
     print("=" * 60 + "\n")
 
     t0 = time.time()
@@ -157,25 +168,13 @@ def main():
 
     run_all = args.exp == "all"
 
-    if run_all or args.exp == "hyperparam":
-        t0 = time.time()
-        print("\n" + "=" * 60)
-        print("EXPERIMENT: Hyperparameter Search")
-        print("=" * 60)
-        run_hyperparameter_search(
-            train_loader.dataset,
-            val_loader.dataset,
-            noise_fn,
-            arch="cnn",
-            results_dir=run_dir,
-            epochs=min(args.epochs, 50),
-        )
-        print(f"--> Hyperparameter Search Took: {time.time() - t0:.1f}s")
+    # ── Experiment order: most-important results first ──────────────
+    # arch → latent → noise → noise_types → hyperparam (last: uses subset)
 
     if run_all or args.exp == "arch":
         t0 = time.time()
         print("\n" + "=" * 60)
-        print("EXPERIMENT: Architecture Comparison (FC / CNN / LSTM / Transformer)")
+        print("EXPERIMENT: Architecture Comparison")
         print("=" * 60)
         run_architecture_comparison(
             train_loader, val_loader, test_loader, noise_fn,
@@ -201,7 +200,7 @@ def main():
     if run_all or args.exp == "noise":
         t0 = time.time()
         print("\n" + "=" * 60)
-        print("EXPERIMENT: Robustness to Noise Level")
+        print("EXPERIMENT: Noise Robustness")
         print("=" * 60)
         run_noise_robustness_experiment(
             train_loader, val_loader, test_loader,
@@ -223,8 +222,32 @@ def main():
             epochs=args.epochs,
             lr=args.lr,
         )
-
         print(f"--> Noise-Type Cross-Evaluation Took: {time.time() - t0:.1f}s")
+
+    if run_all or args.exp == "hyperparam":
+        t0 = time.time()
+        print("\n" + "=" * 60)
+        print("EXPERIMENT: Hyperparameter Search")
+        print("=" * 60)
+        # Use a fast subset (3000 windows) so the 9-config grid finishes quickly.
+        # Full training data is only needed for the main arch comparison.
+        from torch.utils.data import Subset
+        import random as _rnd
+        _rng = _rnd.Random(42)
+        _n   = len(train_loader.dataset)
+        _idx = _rng.sample(range(_n), min(3000, _n))
+        _hp_train = Subset(train_loader.dataset, _idx)
+        _idx_v    = _rng.sample(range(len(val_loader.dataset)), min(500, len(val_loader.dataset)))
+        _hp_val   = Subset(val_loader.dataset, _idx_v)
+        run_hyperparameter_search(
+            _hp_train,
+            _hp_val,
+            noise_fn,
+            arch="cnn",
+            results_dir=run_dir,
+            epochs=min(args.epochs, 20),   # 20 epochs is enough to rank configs
+        )
+        print(f"--> Hyperparameter Search Took: {time.time() - t0:.1f}s")
 
     t_total = time.time() - global_start
     print(f"\nAll experiments complete in {t_total:.1f}s. Results saved to: {run_dir}")
