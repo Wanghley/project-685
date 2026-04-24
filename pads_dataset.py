@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 # First 50 samples contain a smartwatch vibration artifact at task start
 _VIBRATION_SAMPLES = 50
@@ -143,7 +144,8 @@ class PADSDataset(Dataset):
         movement_dir = os.path.join(data_dir, "movement")
         windows: List[torch.Tensor] = []
 
-        for sid in subject_ids:
+        # Iterate over subjects gracefully
+        for sid in tqdm(subject_ids, desc="Loading Patients", leave=False):
             obs_path = os.path.join(movement_dir, f"observation_{sid}.json")
             if not os.path.exists(obs_path):
                 continue
