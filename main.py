@@ -130,6 +130,10 @@ def _save_run_config(run_dir: str, args) -> None:
 
 
 def main():
+    # Enable CuDNN benchmark for RTX 2080 Ti speedup (auto-tunes convolution algorithms)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+
     args = parse_args()
     run_dir = _make_run_dir(args.results, args.tag)
     _save_run_config(run_dir, args)
