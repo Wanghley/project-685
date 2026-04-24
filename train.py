@@ -18,27 +18,44 @@ def train_one_epoch(
     noise_fn: Callable,
     device: str,
     alpha: float = 0.1,
+    scaler = None,
 ) -> float:
+    """Returns train_loss."""
+    if len(loader.dataset) == 0:
+        return float("inf")
     model.train()
     total_loss = 0.0
     for batch in loader:
         clean = batch.to(device)
         noisy = noise_fn(clean)
-        recon = model(noisy)
         
-        # Hybrid Loss: MSE + alpha * Frequency Domain Loss
-        mse_loss  = nn.functional.mse_loss(recon, clean)
-        
-        clean_fft = torch.fft.rfft(clean, dim=-1, norm="ortho")
-        recon_fft = torch.fft.rfft(recon, dim=-1, norm="ortho")
-        freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
-        
-        loss = mse_loss + alpha * freq_loss
-
         optimizer.zero_grad()
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+        
+        if scaler is not None:
+            with torch.amp.autocast(device_type="cuda"):
+                recon = model(noisy)
+                mse_loss = nn.functional.mse_loss(recon, clean)
+                clean_fft = torch.fft.rfft(clean, dim=-1, norm="ortho")
+                recon_fft = torch.fft.rfft(recon, dim=-1, norm="ortho")
+                freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
+                loss = mse_loss + alpha * freq_loss
+            
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            recon = model(noisy)
+            mse_loss = nn.functional.mse_loss(recon, clean)
+            clean_fft = torch.fft.rfft(clean, dim=-1, norm="ortho")
+            recon_fft = torch.fft.rfft(recon, dim=-1, norm="ortho")
+            freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
+            loss = mse_loss + alpha * freq_loss
+            
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item() * len(clean)
     return total_loss / len(loader.dataset)
@@ -98,9 +115,12 @@ def train(
 
     history = {"train_loss": [], "val_loss": [], "val_mse": []}
     best_val = float("inf")
+    
+    # Initialize AMP Scaler if on CUDA GPU (e.g. RTX 2080 Ti)
+    scaler = torch.amp.GradScaler("cuda") if device == "cuda" else None
 
     for epoch in range(1, epochs + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, noise_fn, device, alpha=alpha)
+        train_loss = train_one_epoch(model, train_loader, optimizer, noise_fn, device, alpha=alpha, scaler=scaler)
         val_loss, val_mse = validate(model, val_loader, noise_fn, device, alpha=alpha)
         scheduler.step(val_loss)
 
