@@ -17,17 +17,22 @@ SAMPLING_RATE = 100        # Hz
 BATCH_SIZE = 128           # larger batch → better GPU utilisation
 LEARNING_RATE = 1e-3
 EPOCHS = 100
-LATENT_DIM = 256  # raised from 64; 6×1024 input → 256 latent = 24× compression (was 96×)
+LATENT_DIM = 64   # 6×1024 input → 64 latent = 96× compression; forces real feature learning
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 # ── Noise parameters ─────────────────────────────────────────────
-GAUSSIAN_SIGMA = 0.05  # lowered from 0.1; z-scored signals have unit std, so 0.1 was aggressive
+# σ=0.1 on z-scored signals (unit std) gives SNR_in≈8 dB — enough noise
+# that models cannot converge to the trivial identity solution (MSE≈σ²=0.01)
+# and must learn genuine denoising to improve further.
+# σ=0.05 was too small: the identity mapping achieves MSE≈0.0025 which the
+# optimizer finds in the first few epochs, preventing real learning.
+GAUSSIAN_SIGMA = 0.1
 MASK_PROB = 0.1
 MASK_LEN = 20
 
 # ── Experiment sweep ranges ───────────────────────────────────────
-LATENT_DIM_SWEEP = [32, 64, 128, 256, 512]  # updated sweep range to centre around new default (256)
-NOISE_SIGMA_SWEEP = [0.025, 0.05, 0.1, 0.2]  # shifted down to match new GAUSSIAN_SIGMA baseline
+LATENT_DIM_SWEEP = [8, 16, 32, 64, 128, 256]
+NOISE_SIGMA_SWEEP = [0.05, 0.1, 0.2, 0.4]
 LR_SWEEP = [1e-4, 5e-4, 1e-3]
 BATCH_SWEEP = [32, 64, 128]
 

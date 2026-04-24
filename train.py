@@ -142,10 +142,24 @@ def train(
     # If the probe fails, torch.compile is skipped and training proceeds on
     # the uncompiled model (AMP and cuDNN benchmark still active).
     def _triton_ok() -> bool:
-        """Return True only if the Triton CUDA driver can fully initialise."""
+        """
+        Return True only if the environment can actually build Triton kernels.
+
+        Triton's CUDA driver compiles a small C extension (cuda_utils.c) on
+        first use; this requires Python development headers (Python.h).
+        We check for the header BEFORE touching Triton so that gcc is never
+        invoked and no temp-file noise appears in the logs.
+        """
+        import sysconfig
+        inc = sysconfig.get_path("include")          # e.g. /usr/include/python3.9
+        if inc:
+            import pathlib
+            if not (pathlib.Path(inc) / "Python.h").exists():
+                return False                         # headers missing → skip
+        # Headers present (or unknown); do a cheap Triton driver probe.
         try:
             import triton.runtime.driver as _td
-            _ = _td.active.get_current_target()   # triggers driver init
+            _ = _td.active.get_current_target()
             return True
         except Exception:
             return False
