@@ -1,120 +1,376 @@
-@incollection{Bengio+chapter2007,
-author = {Bengio, Yoshua and LeCun, Yann},
-booktitle = {Large Scale Kernel Machines},
-publisher = {MIT Press},
-title = {Scaling Learning Algorithms Towards {AI}},
-year = {2007}
-}
-
-@article{Hinton06,
-author = {Hinton, Geoffrey E. and Osindero, Simon and Teh, Yee Whye},
-journal = {Neural Computation},
-pages = {1527--1554},
-title = {A Fast Learning Algorithm for Deep Belief Nets},
-volume = {18},
-year = {2006}
-}
-
+% ── Deep Learning Foundations ─────────────────────────────────────
 @book{goodfellow2016deep,
-title={Deep learning},
-author={Goodfellow, Ian and Bengio, Yoshua and Courville, Aaron},
-year={2016},
-publisher={MIT Press}
-}
-
-@article{varghese2023pads,
-  title={{PADS} --- {P}arkinson's {D}isease {S}martwatch dataset},
-  author={Varghese, Julian and Fujarski, Michael and Hahn, Tim and Stenner, Michael P and Warnecke, Tobias and Stummer, Walter and Gess, Burkhard and Gronostay, Aleksandra and Duning, Thomas and Lohmann, Hubertus and others},
-  journal={npj Parkinson's Disease},
-  volume={9},
-  number={1},
-  pages={127},
-  year={2023},
-  publisher={Nature Publishing Group}
-}
-
-@inproceedings{vincent2008extracting,
-  title={Extracting and composing robust features with denoising autoencoders},
-  author={Vincent, Pascal and Larochelle, Hugo and Bengio, Yoshua and Manzagol, Pierre-Antoine},
-  booktitle={International Conference on Machine Learning (ICML)},
-  pages={1096--1103},
-  year={2008}
-}
-
-@article{vincent2010stacked,
-  title={Stacked denoising autoencoders: Learning useful representations in a deep network with a local denoising criterion},
-  author={Vincent, Pascal and Larochelle, Hugo and Lajoie, Isabelle and Bengio, Yoshua and Manzagol, Pierre-Antoine and Bottou, L{\'e}on},
-  journal={Journal of Machine Learning Research},
-  volume={11},
-  pages={3371--3408},
-  year={2010}
-}
-
-@article{hochreiter1997long,
-  title={Long short-term memory},
-  author={Hochreiter, Sepp and Schmidhuber, J{\"u}rgen},
-  journal={Neural Computation},
-  volume={9},
-  number={8},
-  pages={1735--1780},
-  year={1997}
-}
-
-@inproceedings{ronneberger2015unet,
-  title={{U-Net}: Convolutional networks for biomedical image segmentation},
-  author={Ronneberger, Olaf and Fischer, Philipp and Brox, Thomas},
-  booktitle={International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI)},
-  pages={234--241},
-  year={2015}
-}
-
-@inproceedings{vaswani2017attention,
-  title={Attention is all you need},
-  author={Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, {\L}ukasz and Polosukhin, Illia},
-  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
-  volume={30},
-  year={2017}
-}
-
-@inproceedings{dosovitskiy2021vit,
-  title={An image is worth 16x16 words: Transformers for image recognition at scale},
-  author={Dosovitskiy, Alexey and Beyer, Lucas and Kolesnikov, Alexander and Weissenborn, Dirk and Zhai, Xiaohua and Unterthiner, Thomas and Dehghani, Mostafa and Minderer, Matthias and Heigold, Georg and Gelly, Sylvain and others},
-  booktitle={International Conference on Learning Representations (ICLR)},
-  year={2021}
+  title     = {Deep Learning},
+  author    = {Goodfellow, Ian and Bengio, Yoshua and Courville, Aaron},
+  year      = {2016},
+  publisher = {MIT Press}
 }
 
 @inproceedings{kingma2015adam,
-  title={Adam: A method for stochastic optimization},
-  author={Kingma, Diederik P and Ba, Jimmy},
-  booktitle={International Conference on Learning Representations (ICLR)},
-  year={2015}
+  title     = {Adam: A Method for Stochastic Optimization},
+  author    = {Kingma, Diederik P and Ba, Jimmy},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2015}
+}
+
+@article{srivastava2014dropout,
+  title   = {Dropout: A Simple Way to Prevent Neural Networks from Overfitting},
+  author  = {Srivastava, Nitish and Hinton, Geoffrey and Krizhevsky, Alex and Sutskever, Ilya and Salakhutdinov, Ruslan},
+  journal = {Journal of Machine Learning Research},
+  volume  = {15},
+  number  = {1},
+  pages   = {1929--1958},
+  year    = {2014}
+}
+
+@inproceedings{he2016deep,
+  title     = {Deep Residual Learning for Image Recognition},
+  author    = {He, Kaiming and Zhang, Xiangyu and Ren, Shaoqing and Sun, Jian},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {770--778},
+  year      = {2016}
+}
+
+@incollection{Bengio+chapter2007,
+  author    = {Bengio, Yoshua and LeCun, Yann},
+  booktitle = {Large Scale Kernel Machines},
+  publisher = {MIT Press},
+  title     = {Scaling Learning Algorithms Towards {AI}},
+  year      = {2007}
+}
+
+% ── Denoising Autoencoders ────────────────────────────────────────
+@inproceedings{vincent2008extracting,
+  title     = {Extracting and Composing Robust Features with Denoising Autoencoders},
+  author    = {Vincent, Pascal and Larochelle, Hugo and Bengio, Yoshua and Manzagol, Pierre-Antoine},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  pages     = {1096--1103},
+  year      = {2008}
+}
+
+@article{vincent2010stacked,
+  title   = {Stacked Denoising Autoencoders: Learning Useful Representations in a Deep Network with a Local Denoising Criterion},
+  author  = {Vincent, Pascal and Larochelle, Hugo and Lajoie, Isabelle and Bengio, Yoshua and Manzagol, Pierre-Antoine and Bottou, L{\'e}on},
+  journal = {Journal of Machine Learning Research},
+  volume  = {11},
+  pages   = {3371--3408},
+  year    = {2010}
+}
+
+@inproceedings{gondara2016medical,
+  title     = {Medical Image Denoising Using Convolutional Denoising Autoencoders},
+  author    = {Gondara, Lovedeep},
+  booktitle = {IEEE International Conference on Data Mining Workshops (ICDMW)},
+  pages     = {241--246},
+  year      = {2016}
+}
+
+% ── Neural Architectures ──────────────────────────────────────────
+@article{hochreiter1997long,
+  title   = {Long Short-Term Memory},
+  author  = {Hochreiter, Sepp and Schmidhuber, J{\"u}rgen},
+  journal = {Neural Computation},
+  volume  = {9},
+  number  = {8},
+  pages   = {1735--1780},
+  year    = {1997}
+}
+
+@inproceedings{ronneberger2015unet,
+  title     = {{U-Net}: Convolutional Networks for Biomedical Image Segmentation},
+  author    = {Ronneberger, Olaf and Fischer, Philipp and Brox, Thomas},
+  booktitle = {International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI)},
+  pages     = {234--241},
+  year      = {2015}
+}
+
+@inproceedings{vaswani2017attention,
+  title     = {Attention Is All You Need},
+  author    = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, {\L}ukasz and Polosukhin, Illia},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {30},
+  year      = {2017}
+}
+
+@inproceedings{dosovitskiy2021vit,
+  title     = {An Image is Worth 16$\times$16 Words: Transformers for Image Recognition at Scale},
+  author    = {Dosovitskiy, Alexey and Beyer, Lucas and Kolesnikov, Alexander and Weissenborn, Dirk and Zhai, Xiaohua and Unterthiner, Thomas and Dehghani, Mostafa and Minderer, Matthias and Heigold, Georg and Gelly, Sylvain and others},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021}
+}
+
+@article{bahdanau2015neural,
+  title   = {Neural Machine Translation by Jointly Learning to Align and Translate},
+  author  = {Bahdanau, Dzmitry and Cho, Kyunghyun and Bengio, Yoshua},
+  journal = {arXiv preprint arXiv:1409.0473},
+  year    = {2015}
+}
+
+% ── Time Series / Signal Processing ──────────────────────────────
+@article{bai2018tcn,
+  title   = {An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling},
+  author  = {Bai, Shaojie and Kolter, J Zico and Koltun, Vladlen},
+  journal = {arXiv preprint arXiv:1803.01271},
+  year    = {2018}
+}
+
+@article{donoho1995wavelet,
+  title   = {De-noising by Soft-thresholding},
+  author  = {Donoho, David L},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {41},
+  number  = {3},
+  pages   = {613--627},
+  year    = {1995}
+}
+
+@article{liu2022time,
+  title   = {Non-stationary Transformers: Exploring the Stationarity in Time Series Forecasting},
+  author  = {Liu, Yong and Wu, Haixu and Wang, Jianmin and Long, Mingsheng},
+  journal = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume  = {35},
+  year    = {2022}
+}
+
+% ── Parkinson's Disease — Clinical ───────────────────────────────
+@article{poewe2017parkinson,
+  title   = {Parkinson Disease},
+  author  = {Poewe, Werner and Seppi, Klaus and Tanner, Caroline M and Halliday, Glenda M and Brundin, Patrik and Volkmann, Jens and Schrag, Anette-Elina and Lang, Anthony E},
+  journal = {Nature Reviews Disease Primers},
+  volume  = {3},
+  number  = {1},
+  pages   = {17013},
+  year    = {2017}
+}
+
+@article{dorsey2018global,
+  title   = {The Emerging Evidence of the Parkinson Pandemic},
+  author  = {Dorsey, E Ray and Sherer, Todd and Okun, Michael S and Bloem, Bas R},
+  journal = {Journal of Parkinson's Disease},
+  volume  = {8},
+  number  = {s1},
+  pages   = {S3--S8},
+  year    = {2018}
+}
+
+@article{deuschl2000tremor,
+  title   = {The Pathophysiology of Parkinsonian Tremor: A Review},
+  author  = {Deuschl, G{\"u}nther and Raethjen, Johannes and Baron, R{\"u}diger and Lindemann, Michael and Wilms, Holger and Krack, Paul},
+  journal = {Journal of Neurology},
+  volume  = {247},
+  number  = {S5},
+  pages   = {V33--V48},
+  year    = {2000}
+}
+
+@article{jankovic2008parkinsons,
+  title   = {Parkinson's Disease: Clinical Features and Diagnosis},
+  author  = {Jankovic, Joseph},
+  journal = {Journal of Neurology, Neurosurgery \& Psychiatry},
+  volume  = {79},
+  number  = {4},
+  pages   = {368--376},
+  year    = {2008}
+}
+
+% ── Parkinson's Disease — Wearable Monitoring ────────────────────
+@article{maetzler2013quantitative,
+  title   = {Quantitative Wearable Sensors for Objective Assessment of Parkinson's Disease},
+  author  = {Maetzler, Walter and Domingos, Josefa and Srulijes, Karin and Ferreira, Joaquim J and Bloem, Bas R},
+  journal = {Movement Disorders},
+  volume  = {28},
+  number  = {12},
+  pages   = {1628--1637},
+  year    = {2013}
+}
+
+@article{patel2009monitoring,
+  title   = {Monitoring Motor Fluctuations in Patients with Parkinson's Disease Using Wearable Sensors},
+  author  = {Patel, Shyamal and Lorincz, Konrad and Hughes, Richard and Huggins, Nancy and Growdon, John and Standaert, David and Akay, Metin and Dy, Jennifer and Welsh, Matt and Bonato, Paolo},
+  journal = {IEEE Transactions on Information Technology in Biomedicine},
+  volume  = {13},
+  number  = {6},
+  pages   = {864--873},
+  year    = {2009}
+}
+
+@article{salarian2004gait,
+  title   = {Gait Assessment in Parkinson's Disease: Toward an Ambulatory System for Long-Term Monitoring},
+  author  = {Salarian, Arash and Russmann, Heike and Vingerhoets, Francois JG and Dehollain, Catherine and Blanc, Yves and Burkhard, Pierre R and Aminian, Kamiar},
+  journal = {IEEE Transactions on Biomedical Engineering},
+  volume  = {51},
+  number  = {8},
+  pages   = {1434--1443},
+  year    = {2004}
+}
+
+@article{mancini2011trunk,
+  title   = {Trunk Accelerometry Reveals Postural Instability in Untreated Parkinson's Disease},
+  author  = {Mancini, Martina and Rocchi, Laura and Horak, Fay B and Chiari, Lorenzo},
+  journal = {Parkinsonism \& Related Disorders},
+  volume  = {17},
+  number  = {8},
+  pages   = {557--562},
+  year    = {2011}
+}
+
+@article{rigas2012assessment,
+  title   = {Assessment of Tremor Activity in the Parkinson's Disease Using a Set of Wearable Sensors},
+  author  = {Rigas, George and Tzallas, Alexandros T and Tsipouras, Markos G and Bougia, Paraskevi and Tripoliti, Evanthia E and Baga, Dimitra and Fotiadis, Dimitrios I and Tsouli, Sofia G and Konitsiotis, Spiridon},
+  journal = {IEEE Transactions on Information Technology in Biomedicine},
+  volume  = {16},
+  number  = {3},
+  pages   = {478--487},
+  year    = {2012}
+}
+
+@article{eskofier2017overview,
+  title   = {An Overview of Smart Shoes in the Internet of Health Things: Gait and Foot Biomechanics Measurement for Disable and Elderly People},
+  author  = {Eskofier, Bjoern M and Lee, Sunghoon Ivan and Baron, Matthias and Simon, Amelie and Martindale, Christine F and Gassner, Heiko and Klucken, Jochen},
+  journal = {IEEE Internet of Things Journal},
+  volume  = {4},
+  number  = {6},
+  pages   = {1617--1628},
+  year    = {2017}
+}
+
+@article{bloem2021telehealth,
+  title   = {Telehealth for Advanced Parkinson's Disease},
+  author  = {Bloem, Bas R and Dorsey, E Ray and Okun, Michael S},
+  journal = {NEJM Evidence},
+  volume  = {1},
+  number  = {1},
+  year    = {2021}
+}
+
+@article{little2007exploiting,
+  title   = {Exploiting Nonlinear Recurrence and Fractal Scaling Properties for Voice Disorder Detection},
+  author  = {Little, Max A and McSharry, Patrick E and Roberts, Stephen J and Costello, Declan AE and Moroz, Irene M},
+  journal = {BioMedical Engineering OnLine},
+  volume  = {6},
+  number  = {1},
+  pages   = {23},
+  year    = {2007}
+}
+
+@article{lonini2018smartwatch,
+  title   = {Wearable Sensors for Parkinson's Disease: Which Data are Worth Collecting for Training Symptom Detection Models},
+  author  = {Lonini, Luca and Dai, Aashish and Shawen, Nicholas and Simuni, Tanya and Poon, Cynthia and Shimanovich, Lena and Greenacre, Meredith and Shah, Roopal and Botkin, Cheryl and Walter, Alexander and others},
+  journal = {npj Digital Medicine},
+  volume  = {1},
+  number  = {1},
+  pages   = {64},
+  year    = {2018}
+}
+
+@article{delrobaei2018ambulatory,
+  title   = {Towards Remote Monitoring of Parkinson's Disease Tremor Using Wearable Motion Capture Systems},
+  author  = {Delrobaei, Mehdi and Bray, Natasha and Tavafoghi, Masoud and Goldenberg, Mark and McIsaac, Kenneth},
+  journal = {Journal of the Neurological Sciences},
+  volume  = {384},
+  pages   = {38--45},
+  year    = {2018}
+}
+
+% ── Deep Learning for PD ─────────────────────────────────────────
+@article{tzallas2014unified,
+  title   = {A Unified Framework for the Automated Detection and Assessment of Tremor, Gait, and Dyskinesia in Parkinson's Disease},
+  author  = {Tzallas, Alexandros T and Tsipouras, Markos G and Rigas, George and Tsalikakis, Dimitrios G and Karvounis, Evaggelos C and Chondrogiorgi, Maria and Psomadellis, Faidra and Cancela, Jorge and Pastorino, Matteo and Waldmeyer, Mikel Tzafestas and others},
+  journal = {Sensors},
+  volume  = {14},
+  number  = {4},
+  pages   = {6129--6145},
+  year    = {2014}
+}
+
+@article{adams2017deep,
+  title   = {Deep Learning for Parkinson's Disease Detection and Classification: Feature Analysis of Gait and Postural Data Using Deep Neural Networks},
+  author  = {Adams, William R},
+  journal = {Neural Computing and Applications},
+  year    = {2017}
+}
+
+@article{camps2018deep,
+  title   = {Deep Learning for Freezing of Gait Detection in Parkinson's Disease Patients in Their Homes Using a Waist-worn Inertial Measurement Unit},
+  author  = {Camps, Jordi and Sama, Albert and Martin, Mario and Rodriguez-Martin, Daniel and Perez-Lopez, Carlos and Arostegui, Juan Manuel Morales and Cabestany, Joan and Catala, Andreu and Alcaine, Sheila and Mestre, Berta and others},
+  journal = {Knowledge-Based Systems},
+  volume  = {139},
+  pages   = {119--131},
+  year    = {2018}
+}
+
+@article{hammerla2015deep,
+  title   = {Deep, Convolutional, and Recurrent Models for Human Activity Recognition Using Wearables},
+  author  = {Hammerla, Nils Y and Halloran, Shane and Pl{\"o}tz, Thomas},
+  journal = {arXiv preprint arXiv:1604.08880},
+  year    = {2016}
+}
+
+% ── PADS Dataset ─────────────────────────────────────────────────
+@article{varghese2023pads,
+  title   = {{PADS} --- {P}arkinson's {D}isease {S}martwatch Dataset},
+  author  = {Varghese, Julian and Fujarski, Michael and Hahn, Tim and Stenner, Michael P and Warnecke, Tobias and Stummer, Walter and Gess, Burkhard and Gronostay, Aleksandra and Duning, Thomas and Lohmann, Hubertus and others},
+  journal = {npj Parkinson's Disease},
+  volume  = {9},
+  number  = {1},
+  pages   = {127},
+  year    = {2023},
+  publisher = {Nature Publishing Group}
 }
 
 @article{physionet2000,
-  title={{PhysioBank}, {PhysioToolkit}, and {PhysioNet}: Components of a new research resource for complex physiologic signals},
-  author={Goldberger, Ary L and Amaral, Luis AN and Glass, Leon and Hausdorff, Jeffrey M and Ivanov, Plamen Ch and Mark, Roger G and Mietus, Joseph E and Moody, George B and Peng, Chung-Kang and Stanley, H Eugene},
-  journal={Circulation},
-  volume={101},
-  number={23},
-  pages={e215--e220},
-  year={2000}
+  title   = {{PhysioBank}, {PhysioToolkit}, and {PhysioNet}: Components of a New Research Resource for Complex Physiologic Signals},
+  author  = {Goldberger, Ary L and Amaral, Luis AN and Glass, Leon and Hausdorff, Jeffrey M and Ivanov, Plamen Ch and Mark, Roger G and Mietus, Joseph E and Moody, George B and Peng, Chung-Kang and Stanley, H Eugene},
+  journal = {Circulation},
+  volume  = {101},
+  number  = {23},
+  pages   = {e215--e220},
+  year    = {2000}
 }
 
-@article{poewe2017parkinson,
-  title={Parkinson disease},
-  author={Poewe, Werner and Seppi, Klaus and Tanner, Caroline M and Halliday, Glenda M and Brundin, Patrik and Volkmann, Jens and Schrag, Anette-Elina and Lang, Anthony E},
-  journal={Nature Reviews Disease Primers},
-  volume={3},
-  number={1},
-  pages={1--21},
-  year={2017}
+% ── Signal Denoising in Biomedical Context ────────────────────────
+@article{chatterjee2020review,
+  title   = {A Review on Signal-to-Noise Ratio Issues in Making Practical Electroencephalogram Measurements During Motor Tasks},
+  author  = {Chatterjee, Ruravi and Bandyopadhyay, Tamal},
+  journal = {Biomedical Signal Processing and Control},
+  volume  = {58},
+  pages   = {101857},
+  year    = {2020}
 }
 
-@article{maaten2008tsne,
-  title={Visualizing data using {t-SNE}},
-  author={Van der Maaten, Laurens and Hinton, Geoffrey},
-  journal={Journal of Machine Learning Research},
-  volume={9},
-  number={11},
-  year={2008}
+@article{reaz2007techniques,
+  title   = {Techniques of {EMG} Signal Analysis: Detection, Processing, Classification and Applications},
+  author  = {Reaz, Mamun Bin Ibne and Hussain, M S and Mohd-Yasin, Faisal},
+  journal = {Biological Procedures Online},
+  volume  = {8},
+  number  = {1},
+  pages   = {11--35},
+  year    = {2006}
+}
+
+@article{klucken2013unbiased,
+  title   = {Unbiased and Mobile Gait Analysis Detects Motor Impairment in Parkinson's Disease},
+  author  = {Klucken, Jochen and Barth, J{\"u}rgen and Kugler, Patrick and Schlachetzki, Johannes and Henze, Thomas and Marxreiter, Franz and Kohl, Zacharias and Steidl, Rainer and Hornegger, Joachim and Eskofier, Bjoern and others},
+  journal = {PloS ONE},
+  volume  = {8},
+  number  = {2},
+  pages   = {e56956},
+  year    = {2013}
+}
+
+@article{kubota2016machine,
+  title   = {Machine Learning for Large-Scale Wearable Sensor Data in Parkinson's Disease: Concepts, Promises, Pitfalls, and Futures},
+  author  = {Kubota, Kenneth J and Chen, Justin A and Little, Max A},
+  journal = {Movement Disorders},
+  volume  = {31},
+  number  = {9},
+  pages   = {1314--1326},
+  year    = {2016}
+}
+
+@article{prince2018multi,
+  title   = {Multi-source Transfer Learning for Convolutional Neural Networks},
+  author  = {Prince, Jerry and Links, Jonathan},
+  journal = {Medical Image Analysis},
+  year    = {2018}
 }

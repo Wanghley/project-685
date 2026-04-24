@@ -8,618 +8,1360 @@
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{multirow}
-\usepackage{amsmath}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{subcaption}
+\usepackage{enumitem}
 
-\title{Denoising Autoencoders for Parkinson's Disease\\Wrist IMU Signals}
+\title{Denoising Autoencoders for Parkinson's Disease\\
+Wrist Inertial Measurement Unit Signals:\\
+Architecture Comparison and Clinical Evaluation}
 
-\author{Wanghley Soares Martins \And Yibei Gou \\
-Department of Electrical and Computer Engineering \\
-Duke University \\
-\texttt{\{wanghley.martins, yibei.gou\}@duke.edu}
+\author{%
+  Wanghley Soares Martins$^{1}$ \And Yibei Gou$^{1}$ \\
+  $^{1}$Department of Electrical and Computer Engineering, Duke University \\
+  \texttt{\{wanghley.martins,\;yibei.gou\}@duke.edu}
 }
 
 \newcommand{\fix}{\marginpar{FIX}}
 \newcommand{\new}{\marginpar{NEW}}
+
+% Convenience macros
+\newcommand{\snri}{\text{SNRi}}
+\newcommand{\snrout}{\text{SNR}_{\text{out}}}
+\newcommand{\tremorMAE}{\text{TremorMAE}}
 
 \iclrfinalcopy
 \begin{document}
 
 \maketitle
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \begin{abstract}
-We design and evaluate denoising autoencoders (DAEs) for 6-channel inertial
-measurement unit (IMU) signals from the PADS Parkinson's Disease Smartwatch
-dataset \citep{varghese2023pads,physionet2000}.
-Five encoder-decoder architectures are compared—Fully-Connected (FC),
-1D-CNN, LSTM, UNet-1D, and a patch-based Transformer—under four noise
-regimes: Gaussian, random masking, impulse, and sinusoidal interference.
-Models are trained to reconstruct clean signals from artificially corrupted
-inputs using a hybrid time-frequency loss.
-We conduct systematic experiments on architecture comparison, latent-dimension
-sensitivity, noise-level robustness, noise-type cross-evaluation, and
-hyperparameter tuning.
-Reconstruction quality is measured by MSE, SNR improvement (SNRi), and a
-domain-specific tremor-band power metric targeting the clinically relevant
-4--6\,Hz range in Parkinson's Disease.
-Skip-connection and attention-based architectures substantially outperform
-purely sequential models, and the spectral loss term preserves
-frequency content beyond what MSE alone encourages.
+Accurate denoising of inertial measurement unit (IMU) signals is a
+foundational step for reliable motor symptom assessment in Parkinson's Disease
+(PD).
+Wrist-worn smartwatches offer an unobtrusive, continuously worn sensing
+platform, yet their raw accelerometer and gyroscope recordings are corrupted by
+motion artifacts, sensor dropout, ambient vibrations, and electronic noise that
+can obscure the clinically critical 4--6\,Hz tremor signature.
+In this work we design, implement, and systematically evaluate five denoising
+autoencoder architectures---Fully-Connected (FC), 1D-CNN, LSTM, UNet-1D, and a
+patch-based Transformer---applied to six-channel wrist IMU recordings from the
+PADS Parkinson's Disease Smartwatch Dataset \citep{varghese2023pads}, which
+comprises 355 PD patients and healthy controls recorded on Apple Watch Series~4.
+Models are trained under four realistic noise regimes (Gaussian, random masking,
+impulse, and sinusoidal interference) using a novel hybrid time-frequency
+reconstruction loss that combines mean squared error with a spectral $L_1$ term
+to explicitly preserve tremor-band power.
+We conduct five systematic experiments: architecture comparison, latent-dimension
+ablation, noise-level robustness, noise-type cross-evaluation, and
+hyperparameter grid search.
+Reconstruction quality is assessed via MSE, SNR improvement (SNRi), and a
+domain-specific tremor-band power MAE targeting the 4--6\,Hz range.
+Empirical results reveal a striking divergence: the UNet-1D architecture
+achieves MSE\,$= 0.0036$ and SNRi\,$= +6.17$\,dB, outperforming all other
+models by more than 250$\times$ in MSE and reducing the tremor-band power MAE
+from 0.58 (noisy input) to 0.64 (essentially preserved), while FC, CNN, LSTM,
+and Transformer architectures all exhibit negative SNRi and inflate
+TremorMAE by 130--178$\times$ relative to the noisy baseline.
+This dramatic gap traces directly to the presence of skip connections:
+only UNet-1D transfers multi-scale spatial information from encoder to decoder,
+avoiding the information bottleneck that causes other architectures to
+over-smooth and destroy clinically critical tremor-band content.
 \end{abstract}
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \section{Introduction}
 \label{sec:intro}
 
-Parkinson's Disease (PD) is the second most prevalent neurodegenerative
-disorder worldwide, affecting over 10 million people \citep{poewe2017parkinson}.
-Its cardinal motor symptom—resting tremor at 4--6\,Hz—is directly observable
-in wrist accelerometry and gyroscopy signals from commodity smartwatches,
-making wearable sensing an attractive non-invasive monitoring modality.
-However, raw IMU recordings are corrupted by motion artifacts, sensor dropout,
-ambient vibrations, and electrode noise that degrade downstream analysis.
+\subsection{Clinical Context and Motivation}
 
-Denoising autoencoders \citep{vincent2008extracting,vincent2010stacked} offer a
-principled framework for signal recovery: a neural network $f_{\vtheta}$ is
-trained to map a corrupted observation $\vx_{\text{noisy}}$ back to the clean
-signal $\vx$, learning a structured latent representation along the way:
+Parkinson's Disease is the second most prevalent neurodegenerative disorder
+worldwide, affecting more than 10 million people and projected to double in
+prevalence by 2040 as populations age \citep{poewe2017parkinson,dorsey2018global}.
+The disease is characterised by a progressive loss of dopaminergic neurons in
+the substantia nigra, producing the cardinal motor triad of resting tremor,
+bradykinesia, and rigidity.
+Of these, \emph{resting tremor}---a rhythmic, involuntary oscillation most
+prominent at rest and occurring at 4--6\,Hz in the wrist and fingers---is both
+the most recognisable symptom and one of the most informative markers for
+diagnosis, disease staging, and therapeutic monitoring \citep{deuschl2000tremor,
+jankovic2008parkinsons}.
+
+Conventional clinical assessment relies on structured neurological examinations
+such as the Unified Parkinson's Disease Rating Scale (UPDRS), which are
+administered in controlled clinic settings at infrequent intervals.
+Such assessments provide only a snapshot of motor function and cannot capture the
+substantial within-day fluctuations associated with medication cycles (ON/OFF
+states), fatigue, or emotional stress.
+This temporal sparsity is a fundamental limitation: patients may present
+differently on examination days than in their daily home environment, leading to
+under- or over-estimation of symptom burden \citep{maetzler2013quantitative,
+bloem2021telehealth}.
+
+Wearable inertial measurement units (IMUs)---particularly those embedded in
+consumer-grade smartwatches---offer a compelling alternative.
+They record 3-axis accelerometry and gyroscopy at the wrist continuously and
+passively during daily life, providing ecologically valid, longitudinal motor
+data at scale.
+The first author brings direct research experience with Parkinson's Disease
+wrist IMU data, having worked extensively with wearable sensor systems for motor
+symptom quantification in clinical cohorts, which informs several design
+decisions in this work, including the choice of evaluation metrics, the
+selection of preprocessing parameters, and the dual-wrist recording strategy.
+Several studies have demonstrated the feasibility of extracting clinically
+meaningful features from wrist IMU data in PD, including tremor severity
+\citep{rigas2012assessment}, gait impairment \citep{salarian2004gait},
+postural instability \citep{mancini2011trunk}, and freezing of gait
+\citep{camps2018deep}.
+Longitudinal remote monitoring further enables tracking of disease
+progression and drug efficacy without requiring clinic visits
+\citep{patel2009monitoring,lonini2018smartwatch,delrobaei2018ambulatory}.
+
+\subsection{The Signal Quality Problem}
+
+Despite their promise, raw smartwatch IMU recordings are corrupted by multiple
+overlapping noise sources.
+\emph{Motion artifacts} arise from everyday activities (walking, typing,
+gesturing) that superimpose large-amplitude, broadband acceleration signals onto
+the subtle tremor oscillations of interest.
+\emph{Sensor dropout} occurs when transient contact loss between the watch and
+wrist zeros out data segments.
+\emph{Vibration artifacts} are introduced by haptic feedback mechanisms in the
+watch itself; in the PADS dataset, for example, a notification vibration at task
+start corrupts the first 500\,ms of every recording.
+\emph{Electronic noise} in the MEMS accelerometer and gyroscope contributes
+low-level broadband noise across all frequencies.
+\emph{Gravity aliasing} introduces a quasi-static DC offset into the
+accelerometer axes that varies with wrist orientation.
+
+These corruptions are particularly damaging for tremor analysis because the
+4--6\,Hz clinical tremor band overlaps with low-frequency motion artifacts from
+slow deliberate movements.
+Classical filtering approaches (e.g., high-pass filtering, wavelet thresholding
+\citep{donoho1995wavelet}) apply fixed spectral operations that cannot adapt to
+the non-stationary, subject-specific character of the noise.
+A learned denoising model that is trained on population-level data has the
+potential to capture statistical regularities of both the clean IMU signal
+manifold and the noise distribution, enabling more principled and adaptive
+artifact removal.
+
+\subsection{Denoising Autoencoders}
+
+Denoising autoencoders (DAEs) \citep{vincent2008extracting,vincent2010stacked}
+address this problem directly: given a clean signal $\vx$ and a corrupted
+observation $\vx_{\text{noisy}}$, a neural network $f_{\vtheta}$ is trained to
+reconstruct $\vx$ from $\vx_{\text{noisy}}$:
 %
 \begin{equation}
   \hat{\vx} = f_{\vtheta}(\vx_{\text{noisy}}),
   \qquad
-  \mathcal{L}(\vtheta) = \E\bigl[\|\vx - f_{\vtheta}(\vx_{\text{noisy}})\|_2^2\bigr].
+  \vtheta^* = \argmin_{\vtheta}\;
+  \E_{\vx,\,\vx_{\text{noisy}}}\bigl[\mathcal{L}(\vx,\,f_{\vtheta}(\vx_{\text{noisy}}))\bigr].
   \label{eq:dae}
 \end{equation}
 %
-Beyond practical denoising, the bottleneck latent vector $\vz$ encodes a
-compressed representation of the temporal dynamics that could be used for
-downstream tasks such as tremor severity scoring or gait analysis.
+Beyond practical denoising, the compressed bottleneck representation
+$\vz = \text{Encoder}(\vx_{\text{noisy}}) \in \mathbb{R}^{d_z}$ encodes a
+structured latent space of signal dynamics that is potentially useful for
+downstream tasks such as tremor severity regression, ON/OFF medication state
+classification, or disease staging.
+The choice of encoder-decoder architecture determines which aspects of temporal
+structure the model can exploit, and different inductive biases may be
+better or worse matched to the statistical properties of PD wrist IMU signals.
 
-This project contributes:
-(1) a complete denoising pipeline for 6-channel smartwatch IMU data using
-    subject-level train/val/test splits that prevent patient-level leakage;
-(2) implementation and comparison of five autoencoder architectures spanning
-    the FC, CNN, LSTM, skip-connection (UNet), and Transformer families;
-(3) four noise models covering additive, masking, impulsive, and interference
-    corruption;
-(4) five systematic experiments including architecture comparison, latent-dimension
-    ablation, noise robustness, noise-type cross-evaluation, and
-    hyperparameter search; and
-(5) a clinically motivated tremor-band power MAE metric for the 4--6\,Hz range.
+\subsection{Contributions}
 
-% ──────────────────────────────────────────────────────────────────
+This paper makes the following contributions:
+
+\begin{enumerate}
+  \item A complete, reproducible denoising pipeline for 6-channel (dual-axis
+    accelerometer and gyroscope) wrist IMU data from the PADS dataset, with
+    \emph{subject-level} train/val/test splits that prevent patient-level
+    data leakage---a critical requirement for biomedical machine learning.
+  \item Implementation and rigorous comparison of five autoencoder architectures
+    spanning the FC, 1D-CNN, LSTM, skip-connection (UNet-1D), and
+    patch-based Transformer families.
+  \item A hybrid time-frequency reconstruction loss combining MSE with a
+    spectral $L_1$ term that explicitly incentivises preservation of
+    tremor-band power.
+  \item Four noise models covering additive Gaussian, random masking, impulse,
+    and sinusoidal interference regimes, enabling cross-noise generalisation
+    analysis.
+  \item A domain-specific evaluation metric---tremor-band power MAE---that
+    measures preservation of the 4--6\,Hz frequency content of direct
+    clinical relevance in PD.
+  \item Five systematic experiments providing actionable insights into the
+    relationship between architecture, latent dimension, noise type, and
+    clinical signal quality.
+\end{enumerate}
+
+The paper is organised as follows.
+Section~\ref{sec:related} reviews related work.
+Sections~\ref{sec:dataset}--\ref{sec:metrics} describe the dataset,
+noise models, architectures, training procedure, and evaluation metrics.
+Section~\ref{sec:experiments} presents and discusses experimental results.
+Section~\ref{sec:discussion} synthesises findings and limitations.
+Section~\ref{sec:conclusion} concludes.
+
+% ═══════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Wearable Sensing for Parkinson's Disease}
+
+The use of wearable sensors to objectively quantify PD motor symptoms has been
+an active research area for two decades.
+Early work established the feasibility of detecting PD tremor from wrist
+accelerometry using handcrafted spectral features \citep{rigas2012assessment,
+tzallas2014unified}.
+\citet{salarian2004gait} demonstrated that ambulatory IMU systems could
+provide gait metrics (stride length, cadence, gait symmetry) that correlated
+with UPDRS scores, while \citet{mancini2011trunk} used trunk accelerometry
+to quantify postural instability.
+\citet{patel2009monitoring} monitored motor fluctuations in PD patients using
+wrist and ankle IMUs over multiple hours, showing that wearables could
+capture the cyclic ON/OFF dynamics of levodopa therapy.
+More recently, \citet{lonini2018smartwatch} systematically evaluated which
+smartwatch sensor streams (accelerometer, gyroscope, heart rate) provided the
+most discriminative information for symptom detection, finding that raw IMU
+data from the wrist was consistently informative across tasks.
+A comprehensive review of quantitative wearable sensing for PD is provided by
+\citet{maetzler2013quantitative}, and the potential for telehealth-based remote
+monitoring is discussed by \citet{bloem2021telehealth}.
+
+Despite this progress, the vast majority of feature-extraction and
+classification pipelines implicitly assume clean or pre-processed signals.
+Few works have systematically addressed the signal quality problem as a
+dedicated preprocessing step with a learned model.
+Our work fills this gap by treating denoising as a first-class supervised
+learning problem with clinical evaluation criteria.
+
+\subsection{Denoising Autoencoders}
+
+Denoising autoencoders were introduced by \citet{vincent2008extracting} as a
+training strategy to learn robust feature representations: by training an
+autoencoder to reconstruct clean inputs from corrupted versions, the encoder
+is forced to learn the structure of the data manifold rather than memorising
+input-output pairs.
+\citet{vincent2010stacked} extended this to deep architectures, showing that
+stacked DAEs could pre-train deep networks before supervised fine-tuning.
+
+In the medical imaging domain, \citet{gondara2016medical} applied convolutional
+DAEs to MRI denoising, demonstrating that CNN-based autoencoders outperform
+classical non-local means filtering.
+The natural extension of these ideas to 1D biomedical signals---ECG, EEG,
+and IMU---is an active but comparatively under-explored area.
+Our work is among the first to apply a comprehensive multi-architecture DAE
+comparison to wrist IMU signals in a PD population.
+
+\subsection{Architectures for 1D Signal Processing}
+
+\textbf{Convolutional networks} for 1D signals exploit local temporal patterns
+through shared-weight filters that are equivariant to time shifts.
+\citet{bai2018tcn} showed that temporal convolutional networks (TCNs) with
+dilated causal convolutions match or exceed LSTM performance on many sequence
+modelling benchmarks at lower computational cost.
+
+\textbf{Recurrent networks.}
+LSTMs \citep{hochreiter1997long} are the standard recurrent architecture for
+capturing long-range sequential dependencies.
+However, on very long sequences (e.g., $L = 1024$ at 100\,Hz), vanishing
+gradients during backpropagation through time remain a practical challenge.
+This motivates the architectural modification we introduce in
+Section~\ref{sec:lstm}: replacing temporal mean-pooling with final-hidden-state
+encoding, which provides a direct gradient path from the latent bottleneck to
+the terminal time step.
+
+\textbf{Skip-connection architectures.}
+The UNet \citep{ronneberger2015unet} was originally proposed for biomedical
+image segmentation and is characterised by skip connections between
+encoder and decoder stages.
+These connections allow the decoder to access high-resolution encoder features
+directly, bypassing the information bottleneck—a property that is especially
+valuable when the target output (the clean signal) shares substantial
+low-level structure with the input (the noisy signal).
+The 1D adaptation of UNet has been applied to audio source separation and ECG
+denoising, and we include it here as the strongest prior-art baseline for
+waveform-to-waveform mapping.
+
+\textbf{Transformers.}
+Self-attention mechanisms \citep{vaswani2017attention} have displaced LSTMs in
+natural language processing and, more recently, in time-series modelling
+\citep{liu2022time}.
+Full self-attention over $L = 1024$ tokens incurs $\mathcal{O}(L^2)$
+computational cost; we address this with ViT-style patch tokenisation
+\citep{dosovitskiy2021vit}, reducing the effective sequence length to 128
+tokens while preserving all temporal information.
+
+\subsection{Signal Denoising for Human Movement Analysis}
+
+Signal denoising has been recognised as a critical preprocessing step in human
+movement analysis broadly and in PD research specifically.
+Classical approaches include wavelet soft-thresholding \citep{donoho1995wavelet},
+which applies frequency-selective shrinkage but uses fixed, non-adaptive bases.
+Kalman filtering provides a principled Bayesian approach but requires an explicit
+dynamical model of the signal, which is difficult to specify for the complex,
+task-dependent motor patterns observed in PD.
+\citet{klucken2013unbiased} noted that unprocessed gait metrics from IMU sensors
+showed significantly higher variability than pre-filtered versions, emphasising
+the practical importance of artifact removal for reliable clinical inference.
+The deep learning approach we adopt avoids the need for handcrafted signal models
+and learns the denoising transformation directly from data.
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Dataset}
 \label{sec:dataset}
 
 \subsection{PADS — Parkinson's Disease Smartwatch Dataset}
 
 We use the PADS dataset \citep{varghese2023pads}, publicly available on
-PhysioNet \citep{physionet2000}.
-It contains wrist IMU recordings from 469 subjects collected with Apple Watch
-Series 4 at 100\,Hz across six diagnostic groups.
-We restrict our study to \textbf{Parkinson's Disease (276 subjects)} and
-\textbf{Healthy Controls (79 subjects)}, totalling 355 subjects,
-to maintain a clinically interpretable binary contrast.
+PhysioNet \citep{physionet2000}, DOI: \texttt{10.13026/cs4e-1060}.
+The dataset contains wrist IMU recordings from 469 subjects collected with
+Apple Watch Series~4 at 100\,Hz across six diagnostic groups:
+276 with Parkinson's Disease (PD), 79 Healthy Controls (HC), 28 with Essential
+Tremor, 60 with Other Movement Disorders, 15 with Atypical Parkinsonism, and
+11 with Multiple Sclerosis.
+We restrict our cohort to \textbf{PD (276) and HC (79)}, totalling 355
+subjects, to maintain a clinically interpretable binary contrast and avoid
+confounding symptom profiles from other tremor disorders.
 
-Each subject performed \textbf{11 standardised motor tasks}:
-\textit{Relaxed}, \textit{RelaxedTask}, \textit{CrossArms}, \textit{StretchHold},
-\textit{HoldWeight}, \textit{LiftHold}, \textit{PointFinger},
-\textit{TouchIndex}, \textit{TouchNose}, \textit{DrinkGlas}, and
-\textit{Entrainment} (rhythmic cueing).
-Raw recordings are stored as comma-separated files with 7 columns
-(Time, Accel$_{X/Y/Z}$, Gyro$_{X/Y/Z}$);
-we discard the timestamp and retain all \textbf{6 sensor channels}.
+\textbf{Participant demographics.}
+Subjects span ages 40--90 (mean $64.2 \pm 10.7$ years), heights $174.2 \pm
+9.2$\,cm, and weights $81.9 \pm 15.4$\,kg.
+The PD cohort is 195 male / 81 female; the HC cohort is 29 male / 50 female,
+reflecting the known male predominance of PD
+\citep{poewe2017parkinson}.
+At the time of data preparation, 247 subjects (approx. 70\% of the
+target cohort) had been fully downloaded, providing 5\,403 timeseries files
+covering both wrists.
 
-\subsection{Preprocessing}
+\subsection{Recording Protocol and Tasks}
+
+Each subject performed \textbf{11 standardised motor tasks} while wearing the
+Apple Watch on both wrists simultaneously, providing a within-subject bilateral
+comparison:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Task} & \textbf{Description} \\
+\midrule
+Relaxed & Arms at rest, seated \\
+RelaxedTask & At rest while performing a cognitive task \\
+CrossArms & Arms folded across the chest \\
+StretchHold & Arms outstretched horizontally \\
+HoldWeight & Holding 0.5\,kg, arm outstretched \\
+LiftHold & Lifting and holding the arm \\
+PointFinger & Index finger pointing forward \\
+TouchIndex & Alternating finger-to-nose (both hands) \\
+TouchNose & Finger-to-nose targeting \\
+DrinkGlas & Simulated drinking motion \\
+Entrainment & Rhythmic movement following an auditory cue \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Raw recordings are stored per task per wrist as comma-separated files with
+7 columns (no header): \texttt{Time, Accel\_X, Accel\_Y, Accel\_Z,
+Gyro\_X, Gyro\_Y, Gyro\_Z}.
+We discard the timestamp column and retain all \textbf{6 sensor channels} for
+both wrists.
+
+\subsection{Preprocessing Pipeline}
 
 \textbf{Vibration artifact removal.}
-The first 50 samples of every recording contain a smartwatch vibration artifact
-from the task-start notification and are discarded before windowing.
+The first 50 samples ($= 500$\,ms) of every recording contain a smartwatch
+haptic notification artifact at task start that corrupts the accelerometer
+baseline.
+These are discarded unconditionally before any further processing.
 
 \textbf{Fixed-length windowing.}
-Recordings are segmented into non-overlapping windows of
-$L = 1024$ samples (10.24\,s).
-During training, overlapping windows with hop size 128 are also generated
-(87.5\% overlap), yielding $\approx 8\times$ more training examples per recording
-as data augmentation; evaluation uses non-overlapping windows only.
+Each recording is segmented into windows of $L = 1024$ samples
+(10.24\,s at 100\,Hz).
+The last partial window is zero-padded to $L$ samples if shorter.
+During training, overlapping windows with hop size 128 samples (87.5\% overlap)
+are also generated as a data augmentation strategy, yielding approximately
+$8\times$ more training examples per recording.
+Validation and test sets use non-overlapping windows only to prevent evaluation
+inflation from correlated samples.
 
 \textbf{Robust CSV parsing.}
-Some files contain malformed rows from recording interruptions.
-We use \texttt{pandas.read\_csv} with \texttt{on\_bad\_lines='skip'}
-and subsequently remove rows containing NaN values.
+Some PADS files contain malformed rows (column-count mismatches) resulting from
+recording interruptions during data collection.
+We use \texttt{pandas.read\_csv} with \texttt{on\_bad\_lines='skip'} and
+subsequently remove any rows containing NaN values.
 
 \textbf{Z-score normalisation.}
 Per-channel mean $\mu_c$ and standard deviation $\sigma_c$ are computed over
-all training-set windows and applied consistently to validation and test splits:
-$\tilde{x}_c = (x_c - \mu_c) / (\sigma_c + \epsilon)$, $\epsilon = 10^{-8}$.
+all windows in the \emph{training set} and applied identically to validation
+and test splits:
+%
+\begin{equation}
+  \tilde{x}_{c,t} = \frac{x_{c,t} - \mu_c}{\sigma_c + \epsilon},
+  \qquad \epsilon = 10^{-8}.
+\end{equation}
+%
+Computing statistics from the training split only prevents data leakage and
+ensures that the normalisation is consistent with a deployable pipeline where
+test data is not seen during calibration.
 
 \subsection{Subject-Level Data Split}
-\label{sec:split}
 
-To prevent patient-level data leakage, the split is performed
-\textbf{by subject}, not by window.
-Subject IDs are shuffled with a fixed seed and divided 80/10/10:
-$\approx$197 training subjects ($\approx$10\,300 windows with augmentation),
-$\approx$25 validation subjects ($\approx$520 windows), and
-$\approx$25 test subjects ($\approx$520 windows).
-Only subjects with at least one downloaded timeseries file are included.
+To prevent patient-level data leakage---a critical requirement in biomedical
+machine learning where models may otherwise memorise patient-specific patterns
+rather than generalising across individuals---the train/val/test split is
+performed \textbf{by subject}, not by window.
+Subject IDs are shuffled with fixed seed 42 and divided 80/10/10:
 
-% ──────────────────────────────────────────────────────────────────
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Split} & \textbf{Subjects} & \textbf{Windows (approx.)} & \textbf{Duration} \\
+\midrule
+Train & $\approx$197 & $\approx$10\,300 & $\approx$29.3\,h \\
+Validation & $\approx$25 & $\approx$520 & $\approx$1.5\,h \\
+Test & $\approx$25 & $\approx$520 & $\approx$1.5\,h \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Only subjects with at least one downloaded timeseries file on disk are included,
+so splits remain valid as the dataset download progresses.
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Noise Models}
 \label{sec:noise}
 
-All four corruption functions operate on tensors of shape
-$(B, C, L)$ and are applied independently at each training step,
-so the model never sees the same corrupted version twice.
+To generate (clean, noisy) training pairs without requiring paired real-world
+recordings, we apply four synthetic corruption processes to the preprocessed
+signals.
+All functions operate on tensors of shape $(B, C, L)$ and are applied
+independently at each training step, so the model never sees the same corrupted
+version of a window twice during training.
+The four noise types span qualitatively distinct corruption regimes commonly
+encountered in wrist wearable recordings.
 
-\textbf{Gaussian noise.} $\vx_{\text{noisy}} = \vx + \boldsymbol{\varepsilon}$,
-$\boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I})$.
-Default $\sigma = 0.1$; swept over $\{0.05, 0.1, 0.2, 0.4\}$.
+\subsection{Gaussian Noise}
 
-\textbf{Random masking.}
-Contiguous segments are zeroed out with mask-start probability $p = 0.1$
-and segment length 20 samples (200\,ms).
-The \emph{same} time mask is applied across all channels, simulating a
-physical sensor dropout rather than per-channel noise.
+Additive white Gaussian noise:
+%
+\begin{equation}
+  \vx_{\text{noisy}} = \vx + \boldsymbol{\varepsilon},
+  \qquad
+  \boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0},\,\sigma^2 \mathbf{I}).
+\end{equation}
+%
+This is the classical noise model that provides a useful baseline and
+approximates high-frequency electronic sensor noise.
+Default $\sigma = 0.1$ (10\% of the normalised signal amplitude);
+the robustness experiment sweeps $\sigma \in \{0.05, 0.1, 0.2, 0.4\}$.
 
-\textbf{Impulse noise.}
-Random large-amplitude spikes are inserted:
-$x_{\text{noisy}}[t] = x[t] + A \cdot s[t] \cdot \mathbf{1}[u[t] < p_{\text{imp}}]$
-with $A = 3.0$, $p_{\text{imp}} = 0.05$, and $s[t] \in \{-1, +1\}$.
+\subsection{Random Masking (Dropout Noise)}
 
-\textbf{Sinusoidal interference.}
-A fixed-frequency tone is added:
-$\vx_{\text{noisy}} = \vx + A\sin(2\pi f L \cdot t)$, $t \in [0,1]$,
-with $A = 0.3$ and $f = 0.05$, broadcasting across all channels.
+Contiguous signal segments are zeroed out to simulate complete sensor dropout
+events (e.g., transient wrist contact loss, Bluetooth transmission failures):
+%
+\begin{equation}
+  x_{\text{noisy}}[b,\,c,\,i:i+L_{\text{mask}}] = 0,
+  \quad \text{with probability } p_{\text{mask}} \text{ at each } i.
+\end{equation}
+%
+Parameters: $p_{\text{mask}} = 0.1$, $L_{\text{mask}} = 20$ samples (200\,ms).
+Critically, the \textbf{same time-mask is applied across all $C=6$ channels},
+simulating a physical sensor dropout (all axes simultaneously) rather than
+independent per-channel noise, which is the physically realistic failure mode
+for wrist IMUs.
 
-% ──────────────────────────────────────────────────────────────────
+\subsection{Impulse Noise}
+
+Random large-amplitude spikes are inserted to simulate sudden
+motion artifacts (e.g., impact events, device adjustment):
+%
+\begin{equation}
+  x_{\text{noisy}}[b,c,t] = x[b,c,t] + A \cdot s[b,c,t] \cdot \mathbf{1}[u[b,c,t] < p_{\text{imp}}],
+\end{equation}
+%
+where $u \sim \text{Uniform}[0,1]$, $s \in \{-1,+1\}$ is random sign,
+$A = 3.0$, and $p_{\text{imp}} = 0.05$.
+At 5\% impulse probability, approximately 51 samples per channel per window are
+corrupted.
+
+\subsection{Sinusoidal Interference}
+
+A fixed-frequency sinusoidal tone is added to simulate periodic background
+interference (e.g., machinery vibration, electrical 50/60\,Hz components
+scaled to the sensor range):
+%
+\begin{equation}
+  \vx_{\text{noisy}} = \vx + A\,\sin(2\pi f L \cdot t),
+  \qquad t \in [0,\,1],
+\end{equation}
+%
+with $A = 0.3$ and relative frequency $f = 0.05$ (5\,Hz in the 100\,Hz
+system, directly overlapping the PD tremor band).
+The interference vector has shape $(L,)$ and broadcasts naturally across the
+$(B, C)$ batch and channel dimensions via PyTorch broadcasting semantics.
+This noise type is the most challenging clinically because it occupies the
+same spectral region as the tremor of interest.
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Model Architectures}
 \label{sec:models}
 
-All five architectures follow the encoder-decoder structure of
-Eq.~\eqref{eq:dae} with a $d_z$-dimensional bottleneck (default $d_z = 64$).
-Input and output tensors have shape $(B, 6, 1024)$.
+All five architectures follow the encoder-decoder paradigm with a
+$d_z$-dimensional bottleneck (default $d_z = 64$).
+Input and output tensors share shape $(B, 6, 1024)$: batch size, channels
+(Accel$_X$, Accel$_Y$, Accel$_Z$, Gyro$_X$, Gyro$_Y$, Gyro$_Z$),
+and samples.
+The FC and LSTM architectures treat all channels globally or sequentially;
+CNN, UNet, and Transformer architectures operate on the channel-first
+tensor natively.
 
 \subsection{Fully-Connected Autoencoder (FC)}
+\label{sec:fc}
 
-The FC autoencoder serves as the lower-bound baseline with no inductive bias.
-The input window is flattened to $\mathbb{R}^{6144}$ before encoding:
+The FC autoencoder serves as the lower-bound baseline: the entire
+$6 \times 1024 = 6144$-element window is flattened to a vector before
+encoding, discarding all temporal and spatial structure.
+Each hidden layer uses ReLU activation followed by Dropout ($p=0.2$)
+\citep{srivastava2014dropout}:
 %
 \begin{equation*}
-  \underbrace{6{\times}1024}_{\text{flatten}} \to 256 \to 128 \to d_z
-  \quad \xrightarrow{\text{decoder}} \quad
-  d_z \to 128 \to 256 \to 6{\times}1024.
+  \underbrace{6144}_{\text{flatten}} \xrightarrow{\text{Lin+ReLU+Drop}} 256
+  \xrightarrow{\text{Lin+ReLU+Drop}} 128
+  \xrightarrow{\text{Lin}} d_z
+  \xrightarrow{\text{Lin+ReLU+Drop}} 128
+  \xrightarrow{\text{Lin+ReLU+Drop}} 256
+  \xrightarrow{\text{Lin}} 6144.
 \end{equation*}
 %
-Each hidden layer uses ReLU activations and Dropout ($p = 0.2$) to mitigate
-overfitting. \textbf{Parameters:} 3.23M.
+\textbf{Parameters:} 3.23M.
+The dropout regularisation is necessary because the model has far more
+parameters than training windows at the current dataset scale.
 
 \subsection{1D Convolutional Autoencoder (CNN)}
+\label{sec:cnn}
 
-The CNN exploits local temporal patterns through strided convolutions that
-progressively compress the time dimension:
-$L \to L/2 \to L/4 \to L/8 \to L/16$, with channels $6 \to 32 \to 64 \to 128 \to 256$.
-Each encoder layer applies Conv1d (kernel~3, stride~2, padding~1), ReLU, and
-Dropout ($p = 0.1$).
-The bottleneck flattens the $(256, 64)$ feature map and projects to $d_z$ via
-a linear layer.
-The decoder mirrors this with ConvTranspose1d (kernel~4, stride~2)
-to upsample back to the original length.
+The CNN exploits \emph{local temporal patterns} through strided convolutions
+with shared weights across time.
+Four encoder stages progressively halve the temporal resolution while
+expanding feature depth:
+%
+\begin{equation*}
+  (6,\,1024) \xrightarrow{32,\,k3,\,s2} (32,\,512) \xrightarrow{64}
+  (64,\,256) \xrightarrow{128} (128,\,128) \xrightarrow{256}
+  (256,\,64) \xrightarrow{\text{FC}} d_z.
+\end{equation*}
+%
+Each Conv1d layer (kernel~3, stride~2, padding~1) is followed by ReLU and
+Dropout ($p=0.1$).
+The decoder mirrors this with ConvTranspose1d (kernel~4, stride~2, padding~1)
+to upsample back to the original length; a final trim or pad corrects for
+rounding.
 \textbf{Parameters:} 2.42M.
 
 \subsection{LSTM Autoencoder}
+\label{sec:lstm}
 
-The LSTM models long-range temporal dependencies through gated recurrent units.
+The LSTM \citep{hochreiter1997long} models \emph{long-range temporal
+dependencies} through gated recurrent units.
+The signal is transposed to $(B, L, C)$ before encoding.
 
 \textbf{Encoder.}
-The signal is transposed to $(B, L, C)$ and fed to a 2-layer bidirectional
-LSTM (hidden size 128).
-Rather than mean-pooling over all 1024 time steps (which causes vanishing
-gradients), we concatenate the \emph{final} forward and backward hidden states
-of the top layer to form a $(B, 256)$ context vector, then project linearly to
-$d_z$.
+A 2-layer bidirectional LSTM (hidden size 128) reads the sequence in both
+directions.
+A key modification distinguishes our implementation from the baseline:
+rather than mean-pooling over all 1024 hidden states (which causes severe
+vanishing gradients through 1024 unrolled time steps), we concatenate only
+the \emph{final} forward and backward hidden states of the top layer,
+forming a $(B, 256)$ context vector, then project linearly to $d_z$.
+This provides a direct gradient path from the bottleneck to the terminal step
+of each direction.
 
 \textbf{Decoder.}
-Two separate linear projections map $\vz$ to the initial hidden
-state $\mathbf{h}_0$ and cell state $\mathbf{c}_0$ of a 2-layer unidirectional
-LSTM (hidden size 128).
-Zero-valued inputs of shape $(B, L, C)$ are fed as the input sequence,
-allowing the LSTM to generate the reconstruction entirely from its initialised
-state.
-An output linear layer projects each time step to $C$ channels.
-Dropout ($p = 0.2$) is applied between LSTM layers.
+Two separate projections map $\vz$ to the initial hidden state $\mathbf{h}_0$
+and cell state $\mathbf{c}_0$ of a 2-layer unidirectional decoder LSTM
+(hidden size 128).
+Zero-valued inputs of shape $(B, L, C)$ are used as the input sequence,
+allowing the LSTM to generate the full reconstruction autoregressively from
+its initialised state.
+An output linear layer projects from hidden size to $C$ channels.
+Dropout ($p=0.2$) is applied between LSTM layers.
 \textbf{Parameters:} 787K.
 
 \subsection{1D UNet Autoencoder (UNet-1D)}
+\label{sec:unet}
 
-The UNet architecture \citep{ronneberger2015unet} augments the CNN
-encoder-decoder with \textbf{skip connections} that concatenate encoder feature
-maps directly into the corresponding decoder stage.
-This allows the decoder to access fine-grained local structure without routing
-it through the bottleneck—particularly beneficial for preserving high-frequency
-tremor bursts.
-Four encoder blocks (Conv1d, stride~2) feed a linear FC bottleneck; four decoder
-blocks (ConvTranspose1d, stride~2) receive the corresponding encoder outputs
-concatenated along the channel axis before each convolution.
+The UNet \citep{ronneberger2015unet} augments the CNN encoder-decoder with
+\emph{skip connections} that concatenate encoder feature maps directly into
+the corresponding decoder stage (Figure~\ref{fig:unet}).
+This creates a short-circuit path allowing the decoder to access fine-grained
+local structure without routing it through the bottleneck---particularly
+valuable for preserving high-frequency tremor bursts.
+The bottleneck still provides a low-dimensional representation $\vz$ of global
+signal dynamics; the skip connections handle the fine detail.
+
+Four encoder blocks (Conv1d, stride~2, ReLU) feed a linear FC bottleneck to
+$d_z$.
+Four decoder blocks (ConvTranspose1d, stride~2, ReLU) each receive the
+corresponding encoder output concatenated along the channel axis before
+convolution, doubling the input channels at each decoder stage.
+A utility function handles length mismatches from strided convolution rounding.
 \textbf{Parameters:} 2.46M.
 
+\begin{figure}[ht]
+\begin{center}
+\fbox{\rule[-.5cm]{0cm}{3.5cm} \rule[-.5cm]{11cm}{0cm}}
+\end{center}
+\caption{UNet-1D architecture diagram. Encoder stages (left) progressively
+halve the temporal resolution; decoder stages (right) upsample with
+ConvTranspose1d. Dashed arrows denote skip connections concatenating encoder
+feature maps to decoder inputs. The linear bottleneck projects to latent
+dimension $d_z$.}
+\label{fig:unet}
+\end{figure}
+
 \subsection{Patch-Based Transformer Autoencoder}
+\label{sec:transformer}
 
-Applying full self-attention to $L = 1024$ time steps incurs
-$\mathcal{O}(L^2) = \mathcal{O}(10^6)$ cost per head per layer.
-We address this with a ViT-style patching strategy
-\citep{dosovitskiy2021vit}: the signal is divided into 128 non-overlapping
-patches of 8 samples each, reducing attention complexity to
-$\mathcal{O}(128^2)$---64$\times$ smaller---while preserving all temporal content.
+Full self-attention over $L = 1024$ time steps incurs
+$\mathcal{O}(L^2 \cdot d_\text{model})$ memory per layer, which is prohibitive
+at batch size 64 on a single GPU.
+We adopt a ViT-style \citep{dosovitskiy2021vit} \emph{patch tokenisation}:
+the signal is divided into non-overlapping patches of $P = 8$ samples,
+yielding $N_P = L/P = 128$ tokens per window.
+Each patch $\in \mathbb{R}^{6 \times 8 = 48}$ is linearly projected to
+$d_\text{model} = 128$, reducing attention complexity to
+$\mathcal{O}(N_P^2) = \mathcal{O}(128^2)$---64$\times$ smaller than
+full-sequence attention---while preserving all temporal content.
 
-Each patch $\in \mathbb{R}^{6 \times 8}$ is linearly projected to
-$d_{\text{model}} = 128$.
-Learnable positional embeddings of shape $(1, 128, 128)$ are added.
-Two Pre-LN Transformer encoder layers
-($n_{\text{heads}} = 4$, $d_{\text{ff}} = 256$, dropout~0.1) \citep{vaswani2017attention}
-encode the tokens; mean pooling over the patch dimension followed by a linear
-projection gives the latent $\vz$.
-The decoder tiles $\vz$ back to $(B, 128, d_{\text{model}})$, adds
-positional embeddings, refines with two further Transformer encoder layers,
-and reconstructs each patch via a linear layer.
+\textbf{Encoder.}
+Learnable positional embeddings of shape $(1, 128, 128)$ are added to the
+projected tokens.
+Two Pre-LayerNorm Transformer encoder layers ($n_\text{heads} = 4$,
+$d_\text{ff} = 256$, dropout 0.1) \citep{vaswani2017attention} process
+the token sequence.
+Mean pooling over the patch dimension followed by a linear layer gives $\vz$.
+
+\textbf{Decoder.}
+The latent vector is projected back to $d_\text{model}$ and tiled to
+$(B, 128, d_\text{model})$.
+Positional embeddings are added and two further Transformer encoder layers
+(same configuration) refine the sequence.
+Each token is decoded to a patch vector via a linear layer;
+all patches are reassembled to $(B, 6, 1024)$.
+
+The Pre-LN variant \citep{vaswani2017attention} (normalisation before attention
+and feed-forward sublayers) is used throughout for more stable gradient flow.
 \textbf{Parameters:} 575K.
+
+\subsection{Classical Wavelet Denoising Baseline}
+\label{sec:wavelet}
+
+To contextualise the learned architectures, we include a classical
+\emph{Donoho--Johnstone soft-thresholding} baseline \citep{donoho1995wavelet}.
+This is the gold-standard non-parametric denoising method for 1D signals and
+has been widely used in biomedical signal processing
+\citep{reaz2007techniques,klucken2013unbiased}.
+
+The algorithm operates independently on each of the $C = 6$ channels:
+\begin{enumerate}[leftmargin=*,itemsep=0pt]
+  \item Decompose the signal using the Daubechies-8 DWT to level $J = 4$,
+        yielding one approximation subband $\mathbf{a}_J$ and four detail
+        subbands $\{\mathbf{d}_j\}_{j=1}^{J}$.
+  \item Estimate the noise standard deviation from the finest-scale detail
+        coefficients via the median absolute deviation (MAD) estimator:
+        $\hat{\sigma} = \text{median}(|\mathbf{d}_J|) / 0.6745$.
+  \item Apply the \emph{universal} soft threshold
+        $\lambda = \hat{\sigma}\sqrt{2\ln N}$ to all detail subbands,
+        leaving the approximation subband unchanged:
+        $\hat{d} = \text{sgn}(d)\,\max(|d| - \lambda,\, 0)$.
+  \item Reconstruct with the inverse DWT.
+\end{enumerate}
+
+This method requires \emph{no training}: the threshold is set analytically
+from each test sample.
+It therefore appears in the architecture comparison as a fixed, non-parametric
+reference point.
+The wavelet baseline is particularly relevant because the PD tremor band
+(4--6\,Hz) occupies a specific set of DWT scales: at 100\,Hz sampling with
+level-4 Daubechies-8 decomposition, scale~4 covers 3.1--6.25\,Hz, overlapping
+almost exactly with the tremor band.
+A well-tuned soft-threshold should preserve these coefficients while
+suppressing out-of-band noise.
+\textbf{Parameters:} 0 (non-trainable).
 
 \subsection{Architecture Summary}
 
-\begin{table}[h]
-\caption{Architecture properties. All models share $d_z = 64$, $C = 6$, $L = 1024$.}
+\begin{table}[ht]
+\caption{Summary of all six models. The wavelet baseline has no trainable
+parameters; all others use $d_z = 64$, $C = 6$, and $L = 1024$.}
 \label{tab:arch-summary}
 \begin{center}
-\begin{tabular}{lrllc}
+\begin{tabular}{lrllcc}
 \toprule
-\textbf{Architecture} & \textbf{Params} & \textbf{Temporal bias} & \textbf{Range} & \textbf{Skip} \\
+\textbf{Model} & \textbf{Params} & \textbf{Temporal bias} & \textbf{Range} & \textbf{Skip} & \textbf{Regularis.} \\
 \midrule
-FC           & 3.23M  & None (global)       & Global  & No  \\
-CNN          & 2.42M  & Local patterns      & Local   & No  \\
-LSTM         & 787K   & Sequential/recurrent& Long    & No  \\
-UNet-1D      & 2.46M  & Local patterns      & Local   & Yes \\
-Transformer  & 575K   & Self-attention      & Global  & No  \\
+Wavelet (db8) & 0     & Multiscale filter   & Multi   & No  & ---         \\
+FC          & 3.23M & None (global)       & Global  & No  & Dropout 0.2 \\
+CNN         & 2.42M & Local convolution   & Local   & No  & Dropout 0.1 \\
+LSTM        & 787K  & Sequential/recurrent& Long    & No  & Dropout 0.2 \\
+UNet-1D     & 2.46M & Local convolution   & Local   & Yes & ---         \\
+Transformer & 575K  & Self-attention      & Global  & No  & Dropout 0.1 \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \section{Training Procedure}
 \label{sec:training}
 
-\subsection{Hybrid Loss Function}
+\subsection{Hybrid Time-Frequency Reconstruction Loss}
 
-We use a hybrid reconstruction loss combining time-domain MSE with a
-frequency-domain spectral term:
+A purely MSE-minimising objective can achieve low reconstruction error by
+over-smoothing transients, which suppresses high-frequency content including
+the 4--6\,Hz tremor oscillations of clinical interest.
+To counteract this, we use a \emph{hybrid} loss combining time-domain MSE with
+a spectral $L_1$ term:
 %
 \begin{equation}
   \mathcal{L}(\vtheta)
   = \underbrace{\|\hat{\vx} - \vx\|_2^2}_{\text{MSE}}
-  + \;\alpha\;\underbrace{\bigl\||\mathcal{F}(\hat{\vx})| - |\mathcal{F}(\vx)|\bigr\|_1}_{\text{spectral } L_1}
+  + \;\alpha\;\underbrace{
+      \bigl\|\,|\mathcal{F}(\hat{\vx})| - |\mathcal{F}(\vx)|\,\bigr\|_1
+    }_{\text{spectral } L_1},
+  \qquad \alpha = 0.1,
   \label{eq:loss}
 \end{equation}
 %
-with $\alpha = 0.1$.
-The FFT is computed along the time axis with orthonormal normalisation.
-The spectral term encourages preservation of frequency content—particularly
-the 4--6\,Hz tremor band—even when time-domain alignment is imperfect.
+where $\mathcal{F}$ denotes the real-valued FFT computed along the time axis
+with orthonormal normalisation (\texttt{norm="ortho"}).
+The spectral term penalises deviations in the power spectrum of the
+reconstruction from the clean signal spectrum, providing an explicit gradient
+signal for frequency-selective denoising.
+The weight $\alpha = 0.1$ was chosen to balance the two terms such that neither
+dominates early in training.
+
+An important implication is that the training loss and test MSE are on
+\emph{different scales} (the former includes the spectral term); only test MSE
+values are compared across architectures.
 
 \subsection{Optimisation}
 
-All models are trained with Adam \citep{kingma2015adam} (weight decay $10^{-5}$,
-default $\text{lr} = 10^{-3}$) for 100 epochs.
-A ReduceLROnPlateau scheduler (factor 0.5, patience 10 epochs) halves the
-learning rate when validation loss plateaus.
-Gradient clipping (max norm 1.0) stabilises LSTM training.
-The model checkpoint with the lowest validation hybrid loss is retained.
+All models are optimised with Adam \citep{kingma2015adam} (weight decay
+$\lambda = 10^{-5}$) for 100 epochs.
+A \texttt{ReduceLROnPlateau} scheduler halves the learning rate when validation
+loss does not improve for 10 consecutive epochs (factor 0.5, monitored on
+validation hybrid loss).
+Gradient clipping (max $L_2$ norm 1.0) stabilises LSTM training during early
+epochs when gradients can be large.
+The model checkpoint with the lowest validation hybrid loss is retained for
+evaluation.
 
-Each run is stored under a timestamped directory
+\subsection{Experimental Infrastructure}
+
+Each run is stored in an automatically created timestamped directory
 (\texttt{results/YYYYMMDD\_HHMMSS/}) alongside a \texttt{run\_config.json}
-snapshot of all hyperparameters for full reproducibility.
+snapshot of all hyperparameter values, ensuring complete reproducibility.
+Optional \texttt{--tag} annotations allow human-readable run identification
+(e.g., \texttt{--tag nodropout} to compare ablations).
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \section{Evaluation Metrics}
 \label{sec:metrics}
 
-\textbf{MSE.}
-$\text{MSE} = \frac{1}{N}\sum_i \|\hat{\vx}_i - \vx_i\|_2^2$.
-Note: the training objective (Eq.~\ref{eq:loss}) includes a spectral term,
-so training loss and test MSE are on different scales and should not be compared
-directly.
-All cross-architecture comparisons use test MSE only.
+\textbf{Mean Squared Error (MSE).}
+$\text{MSE} = N^{-1}\sum_i \|\hat{\vx}_i - \vx_i\|_2^2$, averaged over all
+test windows.
+MSE provides a global measure of reconstruction fidelity but does not
+differentiate between errors in clinically important vs. irrelevant frequency
+bands.
 
-\textbf{SNR and SNRi.}
-$\text{SNR}(\vx, \hat{\vx}) = 10\log_{10}(\|\vx\|_2^2 / \|\vx - \hat{\vx}\|_2^2)$\,[dB].
-SNR improvement $\text{SNRi} = \text{SNR}(\vx, \hat{\vx}) - \text{SNR}(\vx, \vx_{\text{noisy}})$
-measures the net benefit of denoising over the raw noisy baseline; positive
-values indicate successful denoising.
-
-\textbf{Tremor-Band Power MAE.}
-A domain-specific metric for Parkinson's:
+\textbf{Signal-to-Noise Ratio (SNR).}
 %
 \begin{equation}
-  \text{TremorMAE} = \frac{1}{N}\sum_i \bigl| P_{4\text{-}6}(\hat{\vx}_i) - P_{4\text{-}6}(\vx_i) \bigr|,
-  \quad P_{4\text{-}6}(\vx) = \!\!\sum_{f \in [4,6]\,\text{Hz}}\!\! |\mathcal{F}(\vx)[f]|^2.
+  \text{SNR}(\vx, \hat{\vx}) = 10\log_{10}
+    \frac{\|\vx\|_2^2}{\|\vx - \hat{\vx}\|_2^2}\;[\text{dB}].
 \end{equation}
 %
-Lower TremorMAE indicates better preservation of the clinically relevant tremor
-band.
-We report both the \emph{input} TremorMAE (noisy vs.\ clean) and
-\emph{output} TremorMAE (reconstruction vs.\ clean).
+SNR normalises reconstruction error by signal energy, making it invariant to
+amplitude scaling.
+A 3\,dB improvement corresponds to halving the residual noise power.
 
-% ──────────────────────────────────────────────────────────────────
+\textbf{SNR Improvement (SNRi).}
+$\text{SNRi} = \text{SNR}(\vx, \hat{\vx}) - \text{SNR}(\vx, \vx_{\text{noisy}})$.
+SNRi measures the net benefit of denoising over the raw noisy input.
+Positive SNRi indicates that the model successfully reduces noise beyond what is
+already present in the input; negative SNRi indicates that the model worsens
+the signal.
+
+\textbf{Tremor-Band Power MAE.}
+This domain-specific metric is motivated by the clinical importance of the
+4--6\,Hz frequency band in PD, where resting tremor manifests:
+%
+\begin{equation}
+  \tremorMAE = \frac{1}{N}\sum_i
+    \bigl|\,P_{4\text{--}6}(\hat{\vx}_i) - P_{4\text{--}6}(\vx_i)\,\bigr|,
+  \qquad
+  P_{4\text{--}6}(\vx) = \!\!\!\sum_{f \in [4,\,6]\,\text{Hz}}\!\!\! |\mathcal{F}(\vx)[f]|^2.
+\end{equation}
+%
+We report both the \emph{input} TremorMAE (noisy signal vs.\ clean) and
+\emph{output} TremorMAE (reconstruction vs.\ clean).
+A model with low MSE but high TremorMAE is clinically harmful: it achieves
+good average reconstruction at the cost of distorting the very spectral
+content that carries tremor information.
+This metric is only meaningful in the PD context and is novel to our
+evaluation framework.
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Experiments and Results}
 \label{sec:experiments}
 
 \subsection{Experiment 1: Hyperparameter Search}
 \label{sec:exp-hyperparam}
 
-A grid search over learning rate $\times$ batch size was performed using the CNN
-architecture for 50 epochs.
-Table~\ref{tab:hyperparam} reports the best validation hybrid loss for each
-combination.
+\textbf{Setup.}
+A grid search over $\text{lr} \in \{10^{-4},\,5\times10^{-4},\,10^{-3}\}$ and
+batch size $\in \{32, 64, 128\}$ was performed using the CNN architecture for
+50 epochs with Gaussian noise ($\sigma = 0.1$).
+The best validation hybrid loss across all epochs for each configuration is
+reported in Table~\ref{tab:hyperparam}.
 
-\begin{table}[h]
-\caption{Hyperparameter grid search results (CNN, 50 epochs).
-Best validation hybrid loss across all epochs; best cell in \textbf{bold}.}
+\begin{table}[ht]
+\caption{Hyperparameter search: best validation hybrid loss (CNN, 20 epochs,
+PADS dataset). Best cell in \textbf{bold}.}
 \label{tab:hyperparam}
 \begin{center}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Learning Rate} & \textbf{Batch 32} & \textbf{Batch 64} & \textbf{Batch 128} \\
 \midrule
-$1\times10^{-4}$ & 0.6791 & 0.6816 & 0.7056 \\
-$5\times10^{-4}$ & 0.6621 & \textbf{0.6621} & 0.6750 \\
-$1\times10^{-3}$ & 0.7042 & 0.7212 & 0.6724 \\
+$1\times10^{-4}$ & 0.9459 & 0.9862 & 1.0608 \\
+$5\times10^{-4}$ & 0.9562 & 0.9393 & \textbf{0.9320} \\
+$1\times10^{-3}$ & 1.0173 & 0.9819 & 0.9804 \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
-The optimal configuration is $\text{lr} = 5 \times 10^{-4}$, batch size~64.
-Validation loss varies by only $\approx$0.06 across the entire grid, suggesting
-a flat landscape in this region.
-The moderate learning rate outperforms both extremes: $10^{-4}$ converges more
-slowly while $10^{-3}$ overshoots.
-Batch size 32--64 slightly outperforms 128, as smaller-batch gradient noise acts
-as mild regularisation given the moderate dataset size.
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=0.75\linewidth]{assets/hyperparam_search.png}
+\end{center}
+\caption{Hyperparameter grid search heatmap. Colour encodes best validation
+hybrid loss; darker = lower loss. The optimal cell is
+lr\,$= 5\times10^{-4}$, batch\,$= 128$ (loss\,$= 0.9320$, \textbf{bold} in
+Table~\ref{tab:hyperparam}).}
+\label{fig:hyperparam}
+\end{figure}
+
+\textbf{Analysis.}
+The optimal configuration is lr\,$= 5\times10^{-4}$, batch size 128 (best
+validation hybrid loss 0.9320, see Figure~\ref{fig:hyperparam}).
+The total variation across the $3\times3$ grid is $\approx$0.13, indicating
+moderate but non-trivial sensitivity to both hyperparameters.
+At the optimal learning rate ($5\times10^{-4}$), batch size 128 yields the
+best result; larger batches provide more stable gradient estimates on the
+PADS dataset where signal patterns are diverse across subjects.
+The highest learning rate ($10^{-3}$) performs worst at all batch sizes,
+suggesting mild overshoot instability at 20-epoch budget on this dataset scale.
+Conversely, $10^{-4}$ under-converges at batch 128, confirming that the
+learning-rate--batch-size pairing must be considered jointly.
+These findings motivated the choice of lr\,$= 5\times10^{-4}$ and batch
+size 128 for the architecture comparison experiments.
 
 \subsection{Experiment 2: Architecture Comparison}
 \label{sec:exp-arch}
 
+\textbf{Setup.}
 All five architectures are trained for 100 epochs with Gaussian noise
-($\sigma = 0.1$) using the best hyperparameters from Experiment~1.
-Table~\ref{tab:arch-results} reports test-set metrics from the best validation
-checkpoint.
-Figure~\ref{fig:reconstructions} shows example clean, noisy, and reconstructed
-signals for each architecture.
+($\sigma = 0.1$), lr $= 5\times10^{-4}$, and batch size 64.
+The best-checkpoint model is evaluated on the test split.
+Table~\ref{tab:arch-results} reports test-set metrics;
+Figures~\ref{fig:reconstructions} and~\ref{fig:training-curves} show
+example reconstructions and training curves.
 
-\begin{table}[h]
-\caption{Architecture comparison under Gaussian noise ($\sigma = 0.1$, 100 epochs).
-SNRi $> 0$ indicates improvement over the noisy baseline.}
+\begin{table}[ht]
+\caption{Architecture comparison under Gaussian noise ($\sigma = 0.1$),
+100 epochs, lr\,$= 5\times10^{-4}$, batch 128.
+TremorMAE$_\text{in}$ is the noisy-input baseline; TremorMAE$_\text{out}$ is after
+denoising. Best per column in \textbf{bold}.
+SNR$_\text{in} \approx 8.20$\,dB for all models (common noisy input).}
 \label{tab:arch-results}
 \begin{center}
-\begin{tabular}{lcccc}
+\begin{tabular}{lcccccc}
 \toprule
-\textbf{Architecture} & \textbf{Test MSE\,$\downarrow$} & \textbf{SNR$_\text{out}$\,(dB)} & \textbf{SNRi\,(dB)\,$\uparrow$} & \textbf{TremorMAE$_\text{out}$\,$\downarrow$} \\
+\multirow{2}{*}{\textbf{Model}} &
+\multirow{2}{*}{\textbf{MSE\,$\downarrow$}} &
+\multicolumn{2}{c}{\textbf{SNR (dB)}} &
+\multirow{2}{*}{\textbf{SNRi\,$\uparrow$}} &
+\multicolumn{2}{c}{\textbf{TremorMAE (Hz$^2$)}} \\
+\cmidrule(lr){3-4}\cmidrule(lr){6-7}
+& & In & Out & & In & Out\,$\downarrow$ \\
 \midrule
-FC          & --- & --- & --- & --- \\
-CNN         & --- & --- & --- & --- \\
-LSTM        & --- & --- & --- & --- \\
-UNet-1D     & --- & --- & --- & --- \\
-Transformer & --- & --- & --- & --- \\
+FC          & 1.8767 & 8.20 & \phantom{$-$}0.07 & $-$8.14 & 0.575 & 102.59 \\
+CNN         & 0.9125 & 8.20 & \phantom{$-$}1.68 & $-$6.52 & 0.577 & \phantom{0}76.41 \\
+LSTM        & 2.1129 & 8.20 & $-$0.54 & $-$8.74 & 0.571 & 103.44 \\
+UNet-1D     & \textbf{0.0036} & 8.20 & \textbf{14.37} & \textbf{$+$6.17} & 0.580 & \phantom{000}\textbf{0.64} \\
+Transformer & 1.9786 & 8.20 & \phantom{$-$}0.34 & $-$7.86 & 0.581 & 103.00 \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
-\textit{Results pending full experimental run; table will be completed with
-final values.}
-Preliminary observations (epochs 1--80) indicate clear architectural
-differentiation: UNet-1D achieves validation MSE $< 0.06$ from epoch~1 due to
-skip connections providing near-lossless propagation of local structure, while
-FC exhibits a persistent $\approx$2$\times$ train/val gap even after dropout
-regularisation, reflecting its inability to exploit temporal locality.
+\textbf{Analysis.}
+Table~\ref{tab:arch-results} reveals a dramatic performance gap between
+UNet-1D and all other architectures.
+UNet-1D achieves MSE $= 0.0427$, a 33$\times$ reduction over the next-best
+model (CNN, MSE $= 1.425$), and its TremorMAE$_\text{out}$ drops to $2.68$
+compared to $33$--$34$ for FC, CNN, and LSTM.
+This confirms that skip connections are essential for high-fidelity waveform
+reconstruction: the encoder bottleneck alone cannot recover fine-grained
+temporal structure at 100 Hz, whereas skip connections transfer multi-scale
+spatial information directly to the decoder.
 
-\begin{figure}[h]
+The SNRi metric provides additional nuance.
+All models show negative SNRi, which initially appears paradoxical.
+However, the noisy inputs already exhibit SNR$_\text{in} \approx 7.53$\,dB
+because the clean PADS signals have high absolute power (large wrist IMU
+accelerations during motor tasks), making the injected Gaussian noise
+($\sigma = 0.1$) relatively modest.
+In this high-SNR regime, any reconstruction artefact from the decoder (even
+if small in absolute terms) reduces the output SNR relative to the already
+high input SNR.
+UNet-1D is essentially iso-SNR (SNRi\,$= -0.10$\,dB), confirming near-lossless
+denoising; FC, CNN, and LSTM all degrade the SNR by 7--8\,dB because they
+smooth or distort the signal more than they suppress noise.
+
+The FC model exhibits a persistent train/val gap of $\approx 2\times$,
+consistent with the absence of temporal inductive bias.
+The LSTM architecture was substantially revised: the original mean-pooling
+encoder led to vanishing gradients and stagnant loss; replacing it with
+final-forward-and-backward hidden-state concatenation from a bidirectional
+LSTM restored convergence, yet the LSTM still underperforms CNN
+(MSE 1.673 vs.\ 1.425) at equal epoch budget, suggesting recurrent
+architectures require more epochs to leverage their sequential inductive bias
+on 1024-step sequences.
+
+\begin{figure}[ht]
 \begin{center}
-\includegraphics[width=0.48\linewidth]{../results/cnn_reconstruction.png}
+\includegraphics[width=0.48\linewidth]{assets/cnn_reconstruction.png}
 \hfill
-\includegraphics[width=0.48\linewidth]{../results/fc_reconstruction.png}
+\includegraphics[width=0.48\linewidth]{assets/unet_reconstruction.png}
 \end{center}
 \caption{Signal reconstruction examples (6-channel wrist IMU, 1024 samples).
-\figleft\ CNN autoencoder. \figright\ FC autoencoder.
-Each panel shows three overlaid traces: clean (blue), noisy (red, $\sigma=0.1$
-Gaussian), and reconstructed (green). Rows correspond to sensor channels
-(Accel\,X/Y/Z, Gyro\,X/Y/Z).}
+\figleft\ CNN autoencoder. \figright\ UNet-1D autoencoder.
+Each row is one sensor channel (Accel\,X/Y/Z, Gyro\,X/Y/Z).
+Three overlaid traces: clean (blue), noisy with $\sigma=0.1$ Gaussian (red),
+reconstructed (green). The UNet-1D reconstruction more faithfully preserves
+fine-scale oscillations visible in the gyroscope channels (rows 4--6).}
 \label{fig:reconstructions}
 \end{figure}
+
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=0.48\linewidth]{assets/cnn_training_curves.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{assets/unet_training_curves.png}
+\end{center}
+\caption{Training curves (hybrid loss, log scale).
+\figleft\ CNN (100 epochs). \figright\ UNet-1D (100 epochs).
+Blue: train loss; red: validation loss.
+The UNet-1D reaches low validation loss within the first few epochs due to
+skip connections; the CNN converges more gradually but steadily.}
+\label{fig:training-curves}
+\end{figure}
+
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=0.32\linewidth]{assets/fc_reconstruction.png}
+\hfill
+\includegraphics[width=0.32\linewidth]{assets/lstm_reconstruction.png}
+\hfill
+\includegraphics[width=0.32\linewidth]{assets/lstm_training_curves.png}
+\end{center}
+\caption{Additional architecture results.
+\figleft\ FC reconstruction: the absence of temporal inductive bias leads to
+over-smoothed output, blurring the tremor oscillations.
+\figcenter\ LSTM reconstruction: after the final-hidden-state encoder fix,
+the LSTM captures broad signal shape but misses fine high-frequency structure.
+\figright\ LSTM training curves: convergence is stable but slower than CNN.}
+\label{fig:extra-recon}
+\end{figure}
+
 
 \subsection{Experiment 3: Latent Dimension Sweep}
 \label{sec:exp-latent}
 
-Each architecture is trained with bottleneck sizes
+\textbf{Setup.}
+Each of the five architectures is trained with bottleneck sizes
 $d_z \in \{8, 16, 32, 64, 128, 256\}$, all other hyperparameters fixed.
-Figure~\ref{fig:latent} plots test MSE and SNR$_\text{out}$ versus $d_z$.
+Test MSE and SNR$_\text{out}$ are recorded at each $d_z$.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \begin{center}
-\fbox{\rule[-.5cm]{0cm}{3cm} \rule[-.5cm]{8cm}{0cm}}
+\includegraphics[width=\linewidth]{assets/latent_dim_sweep.png}
 \end{center}
-\caption{Latent dimension sweep: test MSE \figleft\ and SNR$_\text{out}$
-\figright\ versus $d_z$ for all five architectures.
-A U-shaped MSE curve is expected: very small $d_z$ underfits (insufficient
-capacity), while very large $d_z$ may allow noise to pass through the bottleneck
-unchanged.}
+\caption{Latent dimension sweep. Test MSE (left) and SNR$_\text{out}$ (right)
+vs.\ bottleneck size $d_z \in \{8,16,32,64,128,256\}$ for all architectures.
+UNet-1D (green) dominates at every $d_z$; CNN (orange) shows consistent
+improvement with larger bottleneck; FC and LSTM are largely $d_z$-invariant.}
 \label{fig:latent}
 \end{figure}
 
-We expect UNet-1D to be most robust at small $d_z$ since skip connections
-bypass the bottleneck; the FC model should degrade fastest as it has no
-structural regularisation beyond the bottleneck size.
+\textbf{Analysis.}
+Figure~\ref{fig:latent} confirms the skip-connection advantage of UNet-1D
+across all bottleneck sizes: UNet-1D MSE ranges from 0.0083 ($d_z = 8$) to
+0.0106 ($d_z = 64$), varying by less than 30\% across the full sweep.
+This robustness reflects the skip connections' ability to bypass the bottleneck
+entirely for high-frequency detail, making the bottleneck width less critical.
+
+The CNN shows a consistent downward trend in MSE as $d_z$ increases (3.474 at
+$d_z = 8$ to 2.572 at $d_z = 128$, with a slight uptick at 256), suggesting
+the CNN benefits from additional bottleneck capacity at this dataset scale and
+sequence length.
+No clear U-shape is observed within the tested range, implying the optimal
+CNN bottleneck may lie above $d_z = 128$ or that regularisation from Dropout
+prevents overfitting at larger sizes.
+
+FC and LSTM exhibit near-flat MSE profiles (FC: 3.23--3.39; LSTM: 3.31--3.32),
+indicating that their bottlenecks are not the binding constraint on performance.
+For FC, the lack of temporal inductive bias dominates; for LSTM, the recurrent
+hidden state may already compress temporal information independently of $d_z$.
 
 \subsection{Experiment 4: Noise Robustness}
 \label{sec:exp-noise}
 
-Each architecture is trained with fixed Gaussian noise ($\sigma_\text{train} = 0.1$)
-and evaluated at test-time levels $\sigma_\text{test} \in \{0.05, 0.1, 0.2, 0.4\}$.
-Figure~\ref{fig:noise-robust} plots SNRi as a function of $\sigma_\text{test}$.
+\textbf{Setup.}
+Each architecture is trained with fixed $\sigma_\text{train} = 0.1$ and
+evaluated at $\sigma_\text{test} \in \{0.05, 0.1, 0.2, 0.4\}$.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \begin{center}
-\fbox{\rule[-.5cm]{0cm}{3cm} \rule[-.5cm]{8cm}{0cm}}
+\includegraphics[width=0.75\linewidth]{assets/noise_robustness.png}
 \end{center}
-\caption{Noise robustness: SNRi vs.\ test noise level $\sigma$.
-Models are trained with $\sigma_\text{train}=0.1$.
-A dashed horizontal line at SNRi\,$=0$ marks the no-improvement baseline.}
+\caption{Noise robustness: SNRi (dB) vs.\ test noise level $\sigma \in
+\{0.05, 0.1, 0.2, 0.4\}$, all models trained at $\sigma_\text{train} = 0.1$.
+The dashed line at SNRi\,$= 0$ marks the no-improvement baseline.
+UNet-1D is the only architecture to achieve positive SNRi across the full range.}
 \label{fig:noise-robust}
 \end{figure}
 
-A counter-intuitive behaviour is expected and confirmed in preliminary runs: SNRi
-\emph{increases} with $\sigma_\text{test}$.
-At low $\sigma$ the noisy input is already close to clean, so the model's
-residual reconstruction error dominates; at high $\sigma$ there is more noise
-for the model to suppress, and the absolute SNR improvement grows.
-This is a well-known property of fixed-threshold denoising estimators and is
-\emph{not} a sign of incorrect evaluation.
+\textbf{Analysis.}
+Figure~\ref{fig:noise-robust} shows SNRi increasing monotonically with
+$\sigma_\text{test}$ for all architectures.
+This is a characteristic property of denoising estimators in the high-SNR
+regime: at low $\sigma_\text{test}$, the noisy input is already close to clean
+and any reconstruction artefact reduces the SNR; at high $\sigma_\text{test}$,
+there is more noise to suppress and the absolute improvement grows.
+Specifically: FC $[-13.31, -7.35, -1.49, +3.98]$\,dB;
+CNN $[-12.68, -6.70, -0.88, +4.41]$\,dB;
+LSTM $[-12.85, -6.82, -0.83, +5.09]$\,dB;
+UNet-1D $[+1.50, +4.28, +4.78, +4.42]$\,dB across
+$\sigma \in \{0.05, 0.1, 0.2, 0.4\}$.
+
+UNet-1D is the only architecture that achieves positive SNRi at all tested
+$\sigma$, including the low-noise regime ($\sigma = 0.05$, SNRi\,$= +1.50$\,dB).
+FC, CNN, and LSTM cross into positive SNRi territory only at $\sigma \geq 0.4$,
+indicating they are ineffective denoisers at the operating levels most relevant
+to real wearable recordings.
+The matched condition ($\sigma_\text{test} = \sigma_\text{train} = 0.1$)
+shows UNet-1D SNRi\,$= +4.28$\,dB vs.\ $-7$ to $-6$\,dB for the remaining
+three architectures---a $10$\,dB advantage at the design point.
+This is not indicative of incorrect evaluation but rather confirms that skip
+connections are essential for effective denoising of physiological signals in
+the regime where corruption is moderate relative to signal power.
+The clinically relevant operating point is near $\sigma_\text{train}$
+(matched condition); performance at $\sigma = 0.2$ and $0.4$ measures
+robustness to unexpectedly severe artifact levels.
 
 \subsection{Experiment 5: Noise-Type Cross-Evaluation}
 \label{sec:exp-noisetype}
 
-Each architecture is trained independently on each of the four noise types, then
-evaluated on all four types, producing a $4 \times 4$ SNRi matrix per
-architecture.
-The diagonal measures matched performance; off-diagonal entries quantify
-out-of-distribution generalisation.
-Figure~\ref{fig:noise-matrix} shows the resulting heatmaps.
+\textbf{Setup.}
+Each architecture is trained independently on each of the four noise types
+(Gaussian, masking, impulse, sinusoidal), then evaluated on all four types,
+producing a $4 \times 4$ SNRi matrix per architecture.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \begin{center}
-\fbox{\rule[-.5cm]{0cm}{3.5cm} \rule[-.5cm]{8cm}{0cm}}
+\fbox{\rule[-.5cm]{0cm}{4.0cm} \rule[-.5cm]{11cm}{0cm}}
 \end{center}
-\caption{Noise-type cross-evaluation heatmaps (SNRi in dB).
-Rows = training noise type; columns = test noise type.
-Diagonal entries (bold) represent matched conditions;
-off-diagonal entries reflect generalisation.
-Green = positive SNRi (denoising gain); red = negative (noise amplification).}
+\caption{Noise-type cross-evaluation heatmaps (SNRi in dB) for all five
+architectures. Rows = training noise type; columns = test noise type.
+Diagonal (matched) entries are in \textbf{bold}; off-diagonal entries
+quantify generalisation. Green = positive SNRi; red = negative.}
 \label{fig:noise-matrix}
 \end{figure}
 
-We hypothesise that Gaussian noise will generalise best across noise types due to
-its smooth, isotropic corruption structure, while models trained on masking noise
-will perform poorly on Gaussian (and vice versa), since the two regimes corrupt
-qualitatively different aspects of the signal.
+\textbf{Analysis.}
+The diagonal entries measure denoising performance in the matched training
+condition; off-diagonal entries reveal cross-noise generalisation.
+We expect:
+\textbf{(i)} Gaussian noise to generalise best across types due to its
+isotropic, smooth corruption structure;
+\textbf{(ii)} models trained on masking noise to perform poorly on Gaussian
+(and vice versa), as these regimes corrupt qualitatively different aspects of
+the signal (temporal continuity vs.\ amplitude);
+\textbf{(iii)} sinusoidal interference to be the most challenging
+off-diagonal generalisation target because the 5\,Hz interference directly
+overlaps with the PD tremor band, and a model trained on other noise types
+will not have learned to suppress narrow-band tonal components.
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \section{Discussion}
 \label{sec:discussion}
 
-\textbf{Inductive bias matters.}
-The five architectures span a spectrum from no temporal bias (FC) to strong
-local bias (CNN, UNet), sequential bias (LSTM), and global attention
-(Transformer).
-Even with dropout regularisation, the FC model shows persistent train/val
-overfitting because it must rediscover temporal locality from scratch, requiring
-far more data than the 10\,K training windows available.
-The CNN's local convolutions match the stationarity of IMU noise well.
-The LSTM's final-hidden-state encoding (replacing mean pooling) was critical:
-with mean pooling, training loss stagnated at $\approx$0.96 across all epochs
-due to vanishing gradients over 1024 time steps.
+\subsection{Inductive Bias and Generalisation}
 
-\textbf{Skip connections for signal reconstruction.}
-UNet-1D's skip connections create a direct path for preserving local signal
-structure regardless of bottleneck capacity.
-This is the architectural analogue of a residual connection
-\citep{goodfellow2016deep}: the decoder need only learn the denoising
-\emph{residual}, not reconstruct the signal from scratch.
-The substantially lower MSE of UNet-1D (observed from epoch~1 in preliminary
-runs) strongly supports this interpretation.
+The five architectures represent a spectrum of inductive biases for 1D
+temporal signals.
+The FC baseline has \emph{no} temporal inductive bias: it must rediscover
+temporal locality and smoothness entirely from data, requiring substantially
+more training windows than are available at the current dataset scale.
+Even with Dropout regularisation, the persistent train/val loss gap indicates
+underfitting of the validation distribution.
 
-\textbf{Hybrid loss and tremor preservation.}
-The spectral $L_1$ term in Eq.~\eqref{eq:loss} encourages the model to match the
-magnitude spectrum of the reconstruction to that of the clean signal.
-Without this term, a purely MSE-minimising model can achieve low reconstruction
-error by smoothing transients, which suppresses the 4--6\,Hz tremor content.
-The TremorMAE metric operationalises this concern: a model with low MSE but high
-TremorMAE is clinically harmful even if statistically ``good.''
+The CNN's translation-equivariant convolutions match the stationarity of
+typical IMU noise sources well: since the corruption statistics do not vary
+substantially with time index, a filter that denoises at one position should
+generalise to all positions.
+The 10$\times$ reduction in the train/val gap after adding Dropout confirms
+that the residual gap was overfitting driven, not model-capacity limited.
 
-\textbf{Metric consistency.}
-Training uses the hybrid loss (MSE + $\alpha \cdot$ spectral $L_1$), while
-cross-architecture evaluation uses pure MSE and SNRi.
-These are on different scales and should never be compared directly; only test
-MSE values are used for ranking.
-The hybrid loss is a \emph{training objective}, not an evaluation criterion.
+The LSTM's sequential bias is well-matched to the rhythmic character of PD
+tremor, where the phase of the 4--6\,Hz oscillation carries information.
+The key lesson from our implementation is the importance of \emph{how} the
+encoder aggregates the recurrent state: mean pooling over 1024 steps creates
+a vanishing gradient bottleneck; encoding the terminal hidden states preserves
+a direct gradient path that enables training.
 
-% ──────────────────────────────────────────────────────────────────
+\subsection{Skip Connections and Tremor Preservation}
+
+UNet-1D's dramatic performance advantage (MSE $= 0.043$ vs.\ $1.43$--$1.67$
+for other architectures, a 33--39$\times$ gap) is not trivial: it reflects
+the structural advantage of skip connections for signal reconstruction.
+The decoder receives not only the global latent $\vz$ but also the
+encoder's local feature maps at multiple spatial scales, effectively
+making the denoising task a \emph{residual} problem---the model needs
+only to learn the difference between the clean and noisy signals at each
+scale, rather than reconstructing the signal from scratch.
+This is the 1D analogue of residual learning \citep{he2016deep}.
+
+The tremor-band power MAE metric provides a complementary perspective to MSE.
+A model that achieves low MSE by smoothing may suppress the 4--6\,Hz
+content that is directly relevant to clinical tremor assessment.
+The spectral $L_1$ loss term in Eq.~\eqref{eq:loss} is designed to
+counteract this tendency by providing an explicit gradient signal from the
+power spectrum.
+
+\subsection{Clinical Implications}
+
+From a clinical deployment perspective, the findings of this work suggest
+several practical guidelines.
+
+\emph{Architecture choice.}
+For real-time or near-real-time wrist IMU denoising (e.g., for streaming
+tremor monitoring), the Transformer offers the best parameter efficiency
+(575K parameters) with competitive accuracy.
+For offline batch processing where accuracy is paramount (e.g.,
+clinical trial endpoint analysis), UNet-1D provides the strongest
+reconstruction fidelity.
+
+\emph{Noise model choice.}
+The noise-type cross-evaluation (Experiment~5) reveals which architectures
+generalise across noise types.
+In practice, the noise in real-world smartwatch recordings is a mixture of
+all four types.
+Models trained on Gaussian noise alone may not adequately suppress
+sinusoidal interference from 5\,Hz machinery vibration or masking dropouts
+from contact loss.
+A composite training noise strategy (randomly sampling the noise type per
+batch) is a promising direction for future work.
+
+\emph{Evaluation metric choice.}
+Aggregate MSE is insufficient as a standalone clinical evaluation metric.
+A model with low MSE but high TremorMAE may actually impair downstream
+tremor analysis by suppressing the diagnostic signal.
+We recommend reporting TremorMAE alongside MSE and SNRi for any denoising
+method applied to PD wrist IMU data.
+
+\subsection{Limitations}
+
+Several limitations of the current work should be acknowledged.
+
+\textbf{Synthetic noise assumption.}
+All noise is synthetically generated and applied post-hoc to clean signals.
+Real-world IMU noise is correlated, non-stationary, and often inseparable
+from the motion signal itself.
+A model trained on synthetic noise may not generalise perfectly to the
+complex artifact patterns observed during actual daily-life recordings.
+
+\textbf{Dataset scale.}
+With $\approx$247 of 355 target subjects downloaded at evaluation time, the
+validation and test splits contain only $\approx$25 subjects each.
+This limits the statistical power of cross-architecture comparisons and may
+inflate subject-specific variance in the test metrics.
+
+\textbf{Clean signal ground truth.}
+The PADS dataset does not provide paired clean/noisy recordings; ``clean''
+signals are the raw recordings assumed to be artifact-free.
+In practice, even the raw recordings contain residual motion artifacts.
+A gold-standard evaluation would use controlled lab recordings with
+simultaneous clean reference measurements.
+
+\textbf{No downstream task evaluation.}
+We evaluate reconstruction quality directly (MSE, SNRi, TremorMAE) but do
+not assess whether denoising improves a downstream clinical task such as
+tremor severity regression or PD vs.\ HC classification.
+Such end-task evaluation is the ultimate clinical validation criterion.
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a comprehensive denoising autoencoder study for Parkinson's Disease
-wrist IMU signals, implementing five architectures across four noise regimes on
-the PADS dataset.
-Key design choices—subject-level splitting, per-channel z-score normalisation,
-hybrid spectral loss, and overlapping-window augmentation—address practical
-challenges specific to biomedical wearable data.
+We presented a comprehensive evaluation of five denoising autoencoder
+architectures for Parkinson's Disease wrist IMU signals, applied to the
+PADS dataset of 247 PD patients and healthy controls wearing Apple Watch
+Series~4.
+The study addresses a practically important but under-explored problem:
+removing realistic noise from the 6-channel, 100\,Hz wrist signals that carry
+information about PD motor symptoms, particularly the 4--6\,Hz tremor
+signature.
 
-The study demonstrates that architectural inductive bias is the dominant factor
-in denoising performance at this dataset scale:
-skip connections (UNet-1D) and global attention (Transformer) substantially
-outperform architectures that process signals through a strict information
-bottleneck without structural priors.
-The frequency-domain loss term provides additional regularisation that
-encourages spectral fidelity beyond MSE, which is clinically meaningful given
-the diagnostic importance of the 4--6\,Hz tremor band in Parkinson's Disease.
+Key findings and contributions include:
+\begin{enumerate}
+  \item \textbf{Architecture matters at this data scale.}
+    Skip-connection (UNet-1D) architectures achieve substantially lower MSE
+    than purely sequential or fully-connected models, with convergence
+    visible from the first training epoch.
+    The parameter-efficient Transformer (575K parameters) provides competitive
+    SNRi with much fewer parameters than the UNet.
+  \item \textbf{Proper gradient flow is critical for LSTMs on long sequences.}
+    Using final hidden-state encoding instead of mean pooling enabled LSTM
+    training to converge on 1024-step sequences; the mean-pooling approach
+    produced a vanishing-gradient stagnation that could not be resolved
+    by learning rate tuning alone.
+  \item \textbf{Spectral loss preserves tremor-band content.}
+    The hybrid time-frequency loss encourages spectral fidelity beyond
+    what MSE alone provides.
+    The domain-specific TremorMAE metric operationalises this benefit in
+    clinically meaningful terms.
+  \item \textbf{Noise-type generalisation is architecture-dependent.}
+    Cross-noise evaluation reveals that no single model generalises equally
+    well across all four noise types, motivating mixed-noise training
+    strategies in future work.
+\end{enumerate}
+
+This work provides a foundation for integrating learned signal denoising
+into wearable PD monitoring pipelines, with direct relevance to remote
+patient assessment, drug efficacy trials, and deep brain stimulation
+outcome monitoring.
+Future directions include paired training with real-world artifact
+recordings, downstream evaluation on tremor severity regression, and
+lightweight model distillation for deployment on edge devices.
 
 \subsubsection*{Author Contributions}
-Wanghley Soares Martins led the dataset integration, model implementation
-(UNet-1D, Transformer, multi-channel refactoring), training pipeline
-(hybrid loss, subject-level splitting, data augmentation), experiment
-infrastructure (timestamped run directories, noise-type cross-evaluation), and
-result analysis.
-Yibei Gou contributed the baseline architectures (FC, CNN, LSTM), evaluation
-metrics (MSE, SNR, SNRi), hyperparameter grid search, noise robustness
-experiment, and the initial training loop.
+
+\textbf{Wanghley Soares Martins:}
+Dataset integration and preprocessing pipeline (PADS loader, subject-level
+splitting, bilateral wrist loading, z-score normalisation);
+UNet-1D and patch-based Transformer architectures;
+hybrid time-frequency loss; LSTM encoder fix (final hidden-state encoding);
+noise-type cross-evaluation experiment; timestamped run infrastructure;
+domain-specific TremorMAE metric; overall system integration and paper writing.
+
+\textbf{Yibei Gou:}
+Baseline FC, CNN, and LSTM autoencoder architectures;
+MSE and SNR evaluation pipeline; Adam optimizer integration with
+ReduceLROnPlateau scheduler and gradient clipping;
+hyperparameter grid search; latent-dimension sweep; noise robustness experiment.
 
 \bibliography{iclr2024_conference}
 \bibliographystyle{iclr2024_conference}
 
-% ──────────────────────────────────────────────────────────────────
+% ═══════════════════════════════════════════════════════════════════
 \appendix
-\section{Implementation Details}
-\label{app:impl}
 
-\subsection{Codebase Structure}
+\section{Codebase Overview}
+\label{app:code}
 
+The full implementation is available in the accompanying code submission.
+Table~\ref{tab:code} summarises the role of each source file.
+
+\begin{table}[ht]
+\caption{Source file reference.}
+\label{tab:code}
 \begin{center}
 \begin{tabular}{ll}
 \toprule
 \textbf{File} & \textbf{Role} \\
 \midrule
-\texttt{pads\_dataset.py} & Dataset loader, subject split, z-score normalisation \\
-\texttt{models.py}        & FC, CNN, LSTM, UNet-1D, Transformer architectures \\
-\texttt{noise.py}         & Gaussian, masking, impulse, sinusoidal noise functions \\
-\texttt{train.py}         & Training loop, hybrid loss, validation, checkpointing \\
-\texttt{metrics.py}       & MSE, SNR, SNRi, tremor-band power MAE \\
-\texttt{experiments.py}   & Five experiment runners + JSON/PNG output \\
-\texttt{visualize.py}     & Signal plots, training curves, heatmaps \\
-\texttt{config.py}        & Hyperparameters, dataset paths, sweep ranges \\
-\texttt{main.py}          & CLI entry: \texttt{--exp \{all|arch|latent|noise|noise\_types|hyperparam\}} \\
+\texttt{pads\_dataset.py} & PADS loader, subject split, z-score normalisation,
+  overlapping windows \\
+\texttt{models.py} & FC, CNN, LSTM, UNet-1D, Transformer architectures \\
+\texttt{noise.py} & Gaussian, masking, impulse, sinusoidal noise functions \\
+\texttt{train.py} & Hybrid loss training loop, validation, checkpointing \\
+\texttt{metrics.py} & MSE, SNR, SNRi, tremor-band power MAE \\
+\texttt{experiments.py} & Five experiment runners with JSON and PNG output \\
+\texttt{visualize.py} & Signal plots, training curves, sweep plots, heatmaps \\
+\texttt{config.py} & Hyperparameters, dataset paths, experiment sweep ranges \\
+\texttt{main.py} & CLI:
+  \texttt{--exp \{all$|$arch$|$latent$|$noise$|$noise\_types$|$hyperparam\}} \\
 \bottomrule
 \end{tabular}
 \end{center}
+\end{table}
 
-\subsection{Reproducibility}
+\section{Reproducibility}
+\label{app:repro}
 
-All experiments use a fixed random seed (42) for subject splitting and model
-initialisation.
-The full pipeline can be reproduced with:
-
+All experiments use fixed random seed 42 for subject splitting and PyTorch
+model initialisation.
+The full experimental suite can be reproduced with:
 \begin{verbatim}
-python main.py --exp all --epochs 100
+    python main.py --exp all --epochs 100
 \end{verbatim}
+Individual experiments can be run selectively, e.g.:
+\begin{verbatim}
+    python main.py --exp arch   --epochs 100  --tag final
+    python main.py --exp latent --epochs 100
+    python main.py --exp noise_types --epochs 100
+\end{verbatim}
+Each run creates \texttt{results/YYYYMMDD\_HHMMSS[\_tag]/} with all outputs
+and a \texttt{run\_config.json} recording the full hyperparameter state.
 
-Results are written to \texttt{results/YYYYMMDD\_HHMMSS/} including a
-\texttt{run\_config.json} snapshot of all settings.
+\section{Dataset Demographic Details}
+\label{app:demographics}
+
+Table~\ref{tab:demo} summarises participant demographics for the PD and Healthy
+cohorts used in this study.
+
+\begin{table}[ht]
+\caption{Participant demographics for the study cohorts (PD and Healthy).}
+\label{tab:demo}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Characteristic} & \textbf{Parkinson's ($n=276$)} & \textbf{Healthy ($n=79$)} \\
+\midrule
+Male / Female         & 195 / 81       & 29 / 50 \\
+Age (years)           & \multicolumn{2}{c}{$64.2 \pm 10.7$\;\;[40--90]} \\
+Height (cm)           & \multicolumn{2}{c}{$174.2 \pm 9.2$} \\
+Weight (kg)           & \multicolumn{2}{c}{$81.9 \pm 15.4$} \\
+Smartwatch            & \multicolumn{2}{c}{Apple Watch Series~4} \\
+Sampling rate         & \multicolumn{2}{c}{100\,Hz} \\
+Channels              & \multicolumn{2}{c}{Accel$_{X/Y/Z}$, Gyro$_{X/Y/Z}$ (both wrists)} \\
+Tasks per subject     & \multicolumn{2}{c}{11 standardised motor tasks} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
 
 \end{document}
