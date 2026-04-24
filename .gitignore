@@ -16,3 +16,13 @@ physionet.org/
 
 # ignore .claude/
 .claude/
+
+# ignore latex auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
