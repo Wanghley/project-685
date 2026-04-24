@@ -13,6 +13,7 @@ import json
 import torch
 import numpy as np
 from typing import Callable, Dict, List
+from torch.utils.data import DataLoader, Dataset
 
 from models import build_model
 from metrics import evaluate_model
@@ -22,12 +23,38 @@ from visualize import (
     plot_training_curves,
     plot_latent_dim_results,
     plot_noise_robustness,
+    plot_noise_type_matrix,
+    plot_signals,
 )
 import config
 
 
 def _get_device() -> str:
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    return config.DEVICE
+
+
+@torch.no_grad()
+def _save_reconstruction_example(
+    model: torch.nn.Module,
+    test_loader,
+    noise_fn: Callable,
+    device: str,
+    save_path: str,
+    title: str = "Signal Reconstruction",
+):
+    """Grab one test sample, denoise it, and save a multi-channel comparison plot."""
+    model.eval()
+    batch = next(iter(test_loader))
+    clean = batch[:1].to(device)       # (1, C, L)
+    noisy = noise_fn(clean)
+    recon = model(noisy)
+    plot_signals(
+        clean[0].cpu().numpy(),
+        noisy[0].cpu().numpy(),
+        recon[0].cpu().numpy(),
+        title=title,
+        save_path=save_path,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -47,13 +74,15 @@ def run_architecture_comparison(
     os.makedirs(results_dir, exist_ok=True)
     summary = {}
 
-    for arch in ["fc", "cnn", "lstm"]:
+    for arch in ["fc", "cnn", "lstm", "unet"]:
         print(f"\n{'='*50}")
         print(f"  Architecture: {arch.upper()}")
         print(f"{'='*50}")
 
-        model = build_model(arch, config.SIGNAL_LENGTH, config.LATENT_DIM)
-        ckpt  = os.path.join(results_dir, "checkpoints", f"{arch}_best.pt")
+        model = build_model(
+            arch, config.WINDOW_SIZE, config.LATENT_DIM, config.NUM_CHANNELS
+        )
+        ckpt = os.path.join(results_dir, "checkpoints", f"{arch}_best.pt")
 
         history = train(
             model, train_loader, val_loader, noise_fn,
@@ -61,21 +90,29 @@ def run_architecture_comparison(
             checkpoint_path=ckpt, verbose=True,
         )
 
-        # Load best checkpoint
         if os.path.exists(ckpt):
             model.load_state_dict(torch.load(ckpt, map_location=device))
 
         test_metrics = evaluate_model(model, test_loader, noise_fn, device)
         summary[arch] = {"history": history, "test": test_metrics}
 
-        print(f"  Test MSE={test_metrics['mse']:.6f} | "
-              f"SNR_out={test_metrics['snr_out']:.2f} dB | "
-              f"SNRi={test_metrics['snr_improvement']:.2f} dB")
+        print(
+            f"  Test MSE={test_metrics['mse']:.6f} | "
+            f"SNR_out={test_metrics['snr_out']:.2f} dB | "
+            f"SNRi={test_metrics['snr_improvement']:.2f} dB\n"
+            f"  Tremor Power MAE (4-6Hz): In={test_metrics['tremor_mae_in']:.2f} | Out={test_metrics['tremor_mae_out']:.2f}"
+        )
 
         plot_training_curves(
             history,
             title=f"{arch.upper()} Training Curves",
             save_path=os.path.join(results_dir, f"{arch}_training_curves.png"),
+        )
+
+        _save_reconstruction_example(
+            model, test_loader, noise_fn, device,
+            save_path=os.path.join(results_dir, f"{arch}_reconstruction.png"),
+            title=f"{arch.upper()} — Denoising Example (Gaussian σ={config.GAUSSIAN_SIGMA})",
         )
 
     _save_json(summary, os.path.join(results_dir, "architecture_comparison.json"))
@@ -100,7 +137,7 @@ def run_latent_dim_experiment(
     if latent_dims is None:
         latent_dims = config.LATENT_DIM_SWEEP
     if archs is None:
-        archs = ["fc", "cnn", "lstm"]
+        archs = ["fc", "cnn", "lstm", "unet"]
 
     device = _get_device()
     os.makedirs(results_dir, exist_ok=True)
@@ -111,8 +148,10 @@ def run_latent_dim_experiment(
     for latent_dim in latent_dims:
         print(f"\n--- Latent dim = {latent_dim} ---")
         for arch in archs:
-            model = build_model(arch, config.SIGNAL_LENGTH, latent_dim)
-            ckpt  = os.path.join(
+            model = build_model(
+                arch, config.WINDOW_SIZE, latent_dim, config.NUM_CHANNELS
+            )
+            ckpt = os.path.join(
                 results_dir, "checkpoints", f"{arch}_latent{latent_dim}.pt"
             )
             train(
@@ -126,8 +165,10 @@ def run_latent_dim_experiment(
             m = evaluate_model(model, test_loader, noise_fn, device)
             mse_results[arch].append(m["mse"])
             snr_results[arch].append(m["snr_out"])
-            print(f"  {arch.upper():4s} | latent={latent_dim:3d} | "
-                  f"MSE={m['mse']:.5f} | SNR={m['snr_out']:.2f} dB")
+            print(
+                f"  {arch.upper():4s} | latent={latent_dim:3d} | "
+                f"MSE={m['mse']:.5f} | SNR={m['snr_out']:.2f} dB"
+            )
 
     plot_latent_dim_results(
         latent_dims, mse_results, snr_results,
@@ -160,7 +201,7 @@ def run_noise_robustness_experiment(
     if test_sigmas is None:
         test_sigmas = config.NOISE_SIGMA_SWEEP
     if archs is None:
-        archs = ["fc", "cnn", "lstm"]
+        archs = ["fc", "cnn", "lstm", "unet"]
 
     device = _get_device()
     os.makedirs(results_dir, exist_ok=True)
@@ -170,8 +211,10 @@ def run_noise_robustness_experiment(
 
     for arch in archs:
         print(f"\n--- Noise robustness: {arch.upper()} (train σ={train_sigma}) ---")
-        model = build_model(arch, config.SIGNAL_LENGTH, config.LATENT_DIM)
-        ckpt  = os.path.join(results_dir, "checkpoints", f"{arch}_noise_robust.pt")
+        model = build_model(
+            arch, config.WINDOW_SIZE, config.LATENT_DIM, config.NUM_CHANNELS
+        )
+        ckpt = os.path.join(results_dir, "checkpoints", f"{arch}_noise_robust.pt")
 
         train(
             model, train_loader, val_loader, train_noise,
@@ -202,10 +245,104 @@ def run_noise_robustness_experiment(
 
 
 # ─────────────────────────────────────────────────────────────────
-# Experiment 4: Hyperparameter Grid Search
+# Experiment 4: Noise-Type Cross-Evaluation
+# ─────────────────────────────────────────────────────────────────
+def run_noise_type_experiment(
+    train_loader,
+    val_loader,
+    test_loader,
+    archs: List[str] = None,
+    results_dir: str = "results",
+    epochs: int = config.EPOCHS,
+    lr: float = config.LEARNING_RATE,
+) -> Dict:
+    """
+    Train each architecture on each of the four noise types, then evaluate on
+    all four noise types → 4×4 SNRi matrix per architecture.
+
+    Rows   = noise type used during training.
+    Columns = noise type used during evaluation.
+    Diagonal = matched condition; off-diagonal = cross-noise generalisation.
+
+    This directly addresses the spec requirement:
+    "Train or test the models under multiple noise models and compare performance."
+    """
+    if archs is None:
+        archs = ["fc", "cnn", "lstm", "unet"]
+
+    noise_types = ["gaussian", "masking", "impulse", "sinusoidal"]
+    noise_kwargs = {
+        "gaussian":   {"sigma": config.GAUSSIAN_SIGMA},
+        "masking":    {"mask_prob": config.MASK_PROB, "mask_len": config.MASK_LEN},
+        "impulse":    {},
+        "sinusoidal": {},
+    }
+
+    device = _get_device()
+    os.makedirs(results_dir, exist_ok=True)
+    all_results: Dict[str, Dict] = {}
+
+    for arch in archs:
+        print(f"\n{'='*50}")
+        print(f"  Noise-type cross-eval: {arch.upper()}")
+        print(f"{'='*50}")
+
+        # snri_matrix[train_type][test_type]
+        snri_matrix: Dict[str, Dict[str, float]] = {t: {} for t in noise_types}
+
+        for train_type in noise_types:
+            train_noise = make_noise_fn(train_type, **noise_kwargs[train_type])
+            model = build_model(
+                arch, config.WINDOW_SIZE, config.LATENT_DIM, config.NUM_CHANNELS
+            )
+            ckpt = os.path.join(
+                results_dir, "checkpoints", f"{arch}_noisetype_{train_type}.pt"
+            )
+
+            print(f"  Training on [{train_type}] ...")
+            train(
+                model, train_loader, val_loader, train_noise,
+                epochs=epochs, lr=lr, device=device,
+                checkpoint_path=ckpt, verbose=False,
+            )
+            if os.path.exists(ckpt):
+                model.load_state_dict(torch.load(ckpt, map_location=device))
+
+            for test_type in noise_types:
+                test_noise = make_noise_fn(test_type, **noise_kwargs[test_type])
+                m = evaluate_model(model, test_loader, test_noise, device)
+                snri_matrix[train_type][test_type] = m["snr_improvement"]
+
+            row = "  ".join(
+                f"{t[:4]}={snri_matrix[train_type][t]:.1f}dB" for t in noise_types
+            )
+            print(f"    test → {row}")
+
+            # Save one reconstruction example per train-noise type
+            _save_reconstruction_example(
+                model, test_loader, train_noise, device,
+                save_path=os.path.join(
+                    results_dir, f"{arch}_noisetype_{train_type}_reconstruction.png"
+                ),
+                title=f"{arch.upper()} trained on {train_type} noise",
+            )
+
+        plot_noise_type_matrix(
+            snri_matrix, noise_types, arch,
+            save_path=os.path.join(results_dir, f"{arch}_noise_type_matrix.png"),
+        )
+        all_results[arch] = snri_matrix
+
+    _save_json(all_results, os.path.join(results_dir, "noise_type_crosseval.json"))
+    return all_results
+
+
+# ─────────────────────────────────────────────────────────────────
+# Experiment 5: Hyperparameter Grid Search
 # ─────────────────────────────────────────────────────────────────
 def run_hyperparameter_search(
-    signals: np.ndarray,
+    train_dataset: Dataset,
+    val_dataset: Dataset,
     noise_fn: Callable,
     arch: str = "cnn",
     lr_list: List[float] = None,
@@ -215,10 +352,10 @@ def run_hyperparameter_search(
 ) -> Dict:
     """
     Grid search over learning rates and batch sizes.
+    Accepts PyTorch Dataset objects for train and val so that DataLoaders
+    can be rebuilt with each candidate batch size.
     Returns the best (lr, batch_size) pair and full results table.
     """
-    from dataset import build_dataloaders
-
     if lr_list is None:
         lr_list = config.LR_SWEEP
     if batch_list is None:
@@ -231,23 +368,31 @@ def run_hyperparameter_search(
     best_config = None
     table = []
 
+    loader_kwargs = dict(pin_memory=torch.cuda.is_available(), num_workers=0)
+
     for lr in lr_list:
         for bs in batch_list:
-            train_loader, val_loader, _ = build_dataloaders(signals, batch_size=bs)
-            model = build_model(arch, config.SIGNAL_LENGTH, config.LATENT_DIM)
+            train_loader = DataLoader(
+                train_dataset, batch_size=bs, shuffle=True, **loader_kwargs
+            )
+            val_loader = DataLoader(
+                val_dataset, batch_size=bs, shuffle=False, **loader_kwargs
+            )
+            model = build_model(
+                arch, config.WINDOW_SIZE, config.LATENT_DIM, config.NUM_CHANNELS
+            )
 
             history = train(
                 model, train_loader, val_loader, noise_fn,
                 epochs=epochs, lr=lr, device=device,
                 checkpoint_path=None, verbose=False,
             )
-            final_val = history["val_loss"][-1]
-            best_val  = min(history["val_loss"])
+            best_val = min(history["val_loss"])
             table.append({"lr": lr, "batch": bs, "best_val": best_val})
 
             if best_val < best_val_loss:
                 best_val_loss = best_val
-                best_config   = {"lr": lr, "batch": bs}
+                best_config = {"lr": lr, "batch": bs}
 
             print(f"  lr={lr:.0e} | batch={bs:3d} | best_val={best_val:.6f}")
 
