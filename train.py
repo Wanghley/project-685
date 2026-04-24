@@ -14,6 +14,25 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from typing import Callable, Dict, List
 
 
+def _spectral_loss(recon: torch.Tensor, clean: torch.Tensor, device: str) -> torch.Tensor:
+    """
+    Spectral L1 loss: L1 between magnitude spectra.
+
+    rfft is not yet supported on MPS (PyTorch ≤ 2.4).  When training on MPS
+    we compute the FFT on CPU — gradients flow back through the device transfer
+    so the model weights on MPS are updated correctly.  The FFT itself is a
+    small fraction of total compute, so the cross-device hop is negligible.
+    """
+    fft_dev = "cpu" if device == "mps" else device
+    # clean has no learnable parameters → detach before moving to save memory
+    c_f = clean.detach().float().to(fft_dev)
+    r_f = recon.float().to(fft_dev)          # gradient flows through .to()
+    clean_fft = torch.fft.rfft(c_f, dim=-1, norm="ortho")
+    recon_fft = torch.fft.rfft(r_f, dim=-1, norm="ortho")
+    freq_loss = nn.functional.l1_loss(recon_fft.abs(), clean_fft.abs())
+    return freq_loss.to(device)              # bring scalar loss back to training device
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: torch.utils.data.DataLoader,
@@ -31,35 +50,32 @@ def train_one_epoch(
     for batch in loader:
         clean = batch.to(device)
         noisy = noise_fn(clean)
-        
+
         optimizer.zero_grad()
-        
+
         if scaler is not None:
             with torch.amp.autocast(device_type="cuda"):
-                recon = model(noisy)
+                recon    = model(noisy)
                 mse_loss = nn.functional.mse_loss(recon, clean)
-                # Upcast to float32 before FFT to avoid experimental ComplexHalf (fp16) issues
-                clean_fft = torch.fft.rfft(clean.float(), dim=-1, norm="ortho")
-                recon_fft = torch.fft.rfft(recon.float(), dim=-1, norm="ortho")
-                freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
+                freq_loss = _spectral_loss(recon, clean, device)
                 loss = mse_loss + alpha * freq_loss
-            
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimizer)
-            scaler.update()
+
+            if loss.requires_grad:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
         else:
-            recon = model(noisy)
+            recon    = model(noisy)
             mse_loss = nn.functional.mse_loss(recon, clean)
-            clean_fft = torch.fft.rfft(clean, dim=-1, norm="ortho")
-            recon_fft = torch.fft.rfft(recon, dim=-1, norm="ortho")
-            freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
+            freq_loss = _spectral_loss(recon, clean, device)
             loss = mse_loss + alpha * freq_loss
-            
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+
+            if loss.requires_grad:
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
 
         total_loss += loss.item() * len(clean)
     return total_loss / len(loader.dataset)
@@ -84,12 +100,9 @@ def validate(
         noisy = noise_fn(clean)
         recon = model(noisy)
 
-        mse_loss = nn.functional.mse_loss(recon, clean)
-        clean_fft = torch.fft.rfft(clean, dim=-1, norm="ortho")
-        recon_fft = torch.fft.rfft(recon, dim=-1, norm="ortho")
-        freq_loss = nn.functional.l1_loss(torch.abs(recon_fft), torch.abs(clean_fft))
-
-        hybrid = mse_loss + alpha * freq_loss
+        mse_loss  = nn.functional.mse_loss(recon, clean)
+        freq_loss = _spectral_loss(recon, clean, device)
+        hybrid    = mse_loss + alpha * freq_loss
         total_hybrid += hybrid.item() * len(clean)
         total_mse    += mse_loss.item() * len(clean)
 
@@ -114,6 +127,25 @@ def train(
     Returns history dict with 'train_loss' and 'val_loss' lists.
     """
     model.to(device)
+
+    # torch.compile — fuses ops and generates optimised GPU kernels.
+    # Skip for the WaveletDenoiser (no trainable params, pure NumPy forward).
+    # Wrap in try/except: compile is experimental on MPS in torch 2.x.
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    try:
+        import config as _cfg
+        _use_compile = getattr(_cfg, "USE_COMPILE", False)
+    except ImportError:
+        _use_compile = False
+    if _use_compile and trainable and device == "cuda" and hasattr(torch, "compile"):
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            if verbose:
+                print("  torch.compile enabled (reduce-overhead)")
+        except Exception as _e:
+            if verbose:
+                print(f"  torch.compile skipped: {_e}")
+
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
 
