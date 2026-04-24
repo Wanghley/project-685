@@ -72,7 +72,7 @@ class FCAutoencoder(nn.Module):
         return out.view(out.size(0), self.num_channels, self.signal_length)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.decode(self.encode(x))
+        return x + self.decode(self.encode(x))  # Global residual: learn the noise to subtract
 
 # ──────────────────────────────────────────────
 # Advanced: 1D Convolutional Autoencoder
@@ -177,7 +177,7 @@ class CNNAutoencoder(nn.Module):
         return out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.decode(self.encode(x))
+        return x + self.decode(self.encode(x))  # Global residual: learn the noise to subtract
 
 
 # ──────────────────────────────────────────────
@@ -253,7 +253,7 @@ class LSTMAutoencoder(nn.Module):
         return self.output_fc(out).permute(0, 2, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.decode(self.encode(x))
+        return x + self.decode(self.encode(x))  # Global residual: learn the noise to subtract
 
 
 # ──────────────────────────────────────────────
@@ -423,7 +423,7 @@ class TransformerAutoencoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z, tokens = self.encode(x)
-        return self.decode(z, tokens)
+        return x + self.decode(z, tokens)  # Global residual: learn the noise to subtract
 
 
 # ──────────────────────────────────────────────
