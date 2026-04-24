@@ -1,0 +1,87 @@
+\begin{thebibliography}{10}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Dosovitskiy et~al.(2021)Dosovitskiy, Beyer, Kolesnikov, Weissenborn,
+  Zhai, Unterthiner, Dehghani, Minderer, Heigold, Gelly,
+  et~al.]{dosovitskiy2021vit}
+Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn,
+  Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg
+  Heigold, Sylvain Gelly, et~al.
+\newblock An image is worth 16x16 words: Transformers for image recognition at
+  scale.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2021.
+
+\bibitem[Goldberger et~al.(2000)Goldberger, Amaral, Glass, Hausdorff, Ivanov,
+  Mark, Mietus, Moody, Peng, and Stanley]{physionet2000}
+Ary~L Goldberger, Luis~AN Amaral, Leon Glass, Jeffrey~M Hausdorff, Plamen~Ch
+  Ivanov, Roger~G Mark, Joseph~E Mietus, George~B Moody, Chung-Kang Peng, and
+  H~Eugene Stanley.
+\newblock {PhysioBank}, {PhysioToolkit}, and {PhysioNet}: Components of a new
+  research resource for complex physiologic signals.
+\newblock \emph{Circulation}, 101\penalty0 (23):\penalty0 e215--e220, 2000.
+
+\bibitem[Goodfellow et~al.(2016)Goodfellow, Bengio, and
+  Courville]{goodfellow2016deep}
+Ian Goodfellow, Yoshua Bengio, and Aaron Courville.
+\newblock \emph{Deep learning}.
+\newblock MIT Press, 2016.
+
+\bibitem[Kingma \& Ba(2015)Kingma and Ba]{kingma2015adam}
+Diederik~P Kingma and Jimmy Ba.
+\newblock Adam: A method for stochastic optimization.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2015.
+
+\bibitem[Poewe et~al.(2017)Poewe, Seppi, Tanner, Halliday, Brundin, Volkmann,
+  Schrag, and Lang]{poewe2017parkinson}
+Werner Poewe, Klaus Seppi, Caroline~M Tanner, Glenda~M Halliday, Patrik
+  Brundin, Jens Volkmann, Anette-Elina Schrag, and Anthony~E Lang.
+\newblock Parkinson disease.
+\newblock \emph{Nature Reviews Disease Primers}, 3\penalty0 (1):\penalty0
+  1--21, 2017.
+
+\bibitem[Ronneberger et~al.(2015)Ronneberger, Fischer, and
+  Brox]{ronneberger2015unet}
+Olaf Ronneberger, Philipp Fischer, and Thomas Brox.
+\newblock {U-Net}: Convolutional networks for biomedical image segmentation.
+\newblock In \emph{International Conference on Medical Image Computing and
+  Computer-Assisted Intervention (MICCAI)}, pp.\  234--241, 2015.
+
+\bibitem[Varghese et~al.(2023)Varghese, Fujarski, Hahn, Stenner, Warnecke,
+  Stummer, Gess, Gronostay, Duning, Lohmann, et~al.]{varghese2023pads}
+Julian Varghese, Michael Fujarski, Tim Hahn, Michael~P Stenner, Tobias
+  Warnecke, Walter Stummer, Burkhard Gess, Aleksandra Gronostay, Thomas Duning,
+  Hubertus Lohmann, et~al.
+\newblock {PADS} --- {P}arkinson's {D}isease {S}martwatch dataset.
+\newblock \emph{npj Parkinson's Disease}, 9\penalty0 (1):\penalty0 127, 2023.
+
+\bibitem[Vaswani et~al.(2017)Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez,
+  Kaiser, and Polosukhin]{vaswani2017attention}
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+  Aidan~N Gomez, {\L}ukasz Kaiser, and Illia Polosukhin.
+\newblock Attention is all you need.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, volume~30, 2017.
+
+\bibitem[Vincent et~al.(2008)Vincent, Larochelle, Bengio, and
+  Manzagol]{vincent2008extracting}
+Pascal Vincent, Hugo Larochelle, Yoshua Bengio, and Pierre-Antoine Manzagol.
+\newblock Extracting and composing robust features with denoising autoencoders.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, pp.\
+  1096--1103, 2008.
+
+\bibitem[Vincent et~al.(2010)Vincent, Larochelle, Lajoie, Bengio, Manzagol, and
+  Bottou]{vincent2010stacked}
+Pascal Vincent, Hugo Larochelle, Isabelle Lajoie, Yoshua Bengio, Pierre-Antoine
+  Manzagol, and L{\'e}on Bottou.
+\newblock Stacked denoising autoencoders: Learning useful representations in a
+  deep network with a local denoising criterion.
+\newblock \emph{Journal of Machine Learning Research}, 11:\penalty0 3371--3408,
+  2010.
+
+\end{thebibliography}
