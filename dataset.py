@@ -71,7 +71,7 @@ def build_dataloaders(
         dataset, [n_train, n_val, n_test], generator=generator
     )
 
-    kwargs = dict(batch_size=batch_size, pin_memory=True, num_workers=0)
+    kwargs = dict(batch_size=batch_size, pin_memory=torch.cuda.is_available(), num_workers=0)
     return (
         DataLoader(train_ds, shuffle=True, **kwargs),
         DataLoader(val_ds,  shuffle=False, **kwargs),
