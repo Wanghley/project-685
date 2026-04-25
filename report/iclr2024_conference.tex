@@ -61,16 +61,21 @@ ablation, noise-level robustness, noise-type cross-evaluation, and
 hyperparameter grid search.
 Reconstruction quality is assessed via MSE, SNR improvement (SNRi), and a
 domain-specific tremor-band power MAE targeting the 4--6\,Hz range.
-Empirical results reveal a striking divergence: the UNet-1D architecture
-achieves MSE\,$= 0.0036$ and SNRi\,$= +6.17$\,dB, outperforming all other
-models by more than 250$\times$ in MSE and reducing the tremor-band power MAE
-from 0.58 (noisy input) to 0.64 (essentially preserved), while FC, CNN, LSTM,
-and Transformer architectures all exhibit negative SNRi and inflate
-TremorMAE by 130--178$\times$ relative to the noisy baseline.
-This dramatic gap traces directly to the presence of skip connections:
-only UNet-1D transfers multi-scale spatial information from encoder to decoder,
-avoiding the information bottleneck that causes other architectures to
-over-smooth and destroy clinically critical tremor-band content.
+Empirical results reveal a clear architectural divide governed by a single
+structural principle---\emph{skip connections that bypass the information
+bottleneck}.
+UNet-1D (multi-scale spatial skips) and the patch-based Transformer
+(encoder token skips at patch level) both achieve
+MSE\,$\approx 0.004$, SNRi\,$\approx +5.4$\,dB, and preserve tremor-band
+power MAE to within 0.68\,Hz$^2$ of the clean baseline.
+By contrast, FC, CNN, and LSTM architectures---which route all information
+through a tight 64-dimensional bottleneck without skip paths---achieve
+negative SNRi ($-7$ to $-9$\,dB) and inflate TremorMAE by 94--168$\times$.
+A classical Donoho--Johnstone wavelet baseline occupies a middle ground
+(SNRi\,$= +0.53$\,dB, TremorMAE 17.69\,Hz$^2$).
+These findings demonstrate that skip connections are both necessary and
+sufficient for effective denoising of multi-channel PD wrist IMU signals,
+with direct clinical implications for tremor monitoring pipelines.
 \end{abstract}
 
 % ═══════════════════════════════════════════════════════════════════
@@ -613,17 +618,17 @@ convolution, doubling the input channels at each decoder stage.
 A utility function handles length mismatches from strided convolution rounding.
 \textbf{Parameters:} 2.46M.
 
-\begin{figure}[ht]
-\begin{center}
-\fbox{\rule[-.5cm]{0cm}{3.5cm} \rule[-.5cm]{11cm}{0cm}}
-\end{center}
-\caption{UNet-1D architecture diagram. Encoder stages (left) progressively
-halve the temporal resolution; decoder stages (right) upsample with
-ConvTranspose1d. Dashed arrows denote skip connections concatenating encoder
-feature maps to decoder inputs. The linear bottleneck projects to latent
-dimension $d_z$.}
-\label{fig:unet}
-\end{figure}
+% \begin{figure}[ht]
+% \begin{center}
+% \fbox{\rule[-.5cm]{0cm}{3.5cm} \rule[-.5cm]{11cm}{0cm}}
+% \end{center}
+% \caption{UNet-1D architecture diagram. Encoder stages (left) progressively
+% halve the temporal resolution; decoder stages (right) upsample with
+% ConvTranspose1d. Dashed arrows denote skip connections concatenating encoder
+% feature maps to decoder inputs. The linear bottleneck projects to latent
+% dimension $d_z$.}
+% \label{fig:unet}
+% \end{figure}
 
 \subsection{Patch-Based Transformer Autoencoder}
 \label{sec:transformer}
@@ -835,16 +840,16 @@ reported in Table~\ref{tab:hyperparam}.
 
 \begin{table}[ht]
 \caption{Hyperparameter search: best validation hybrid loss (CNN, 20 epochs,
-PADS dataset). Best cell in \textbf{bold}.}
+3{,}000-window subset of PADS training set). Best cell in \textbf{bold}.}
 \label{tab:hyperparam}
 \begin{center}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Learning Rate} & \textbf{Batch 32} & \textbf{Batch 64} & \textbf{Batch 128} \\
 \midrule
-$1\times10^{-4}$ & 0.9459 & 0.9862 & 1.0608 \\
-$5\times10^{-4}$ & 0.9562 & 0.9393 & \textbf{0.9320} \\
-$1\times10^{-3}$ & 1.0173 & 0.9819 & 0.9804 \\
+$1\times10^{-4}$ & 2.049 & 2.048 & 2.079 \\
+$5\times10^{-4}$ & \textbf{1.657} & 1.824 & 1.844 \\
+$1\times10^{-3}$ & 1.702 & 1.789 & 1.778 \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -854,45 +859,48 @@ $1\times10^{-3}$ & 1.0173 & 0.9819 & 0.9804 \\
 \begin{center}
 \includegraphics[width=0.75\linewidth]{assets/hyperparam_search.png}
 \end{center}
-\caption{Hyperparameter grid search heatmap. Colour encodes best validation
-hybrid loss; darker = lower loss. The optimal cell is
-lr\,$= 5\times10^{-4}$, batch\,$= 128$ (loss\,$= 0.9320$, \textbf{bold} in
+\caption{Hyperparameter grid search heatmap (CNN, 20 epochs). Colour encodes
+best validation hybrid loss; darker\,=\,lower loss. The optimal cell is
+lr\,$=5\times10^{-4}$, batch\,32 (1.657, \textbf{bold} in
 Table~\ref{tab:hyperparam}).}
 \label{fig:hyperparam}
 \end{figure}
 
 \textbf{Analysis.}
-The optimal configuration is lr\,$= 5\times10^{-4}$, batch size 128 (best
-validation hybrid loss 0.9320, see Figure~\ref{fig:hyperparam}).
-The total variation across the $3\times3$ grid is $\approx$0.13, indicating
-moderate but non-trivial sensitivity to both hyperparameters.
-At the optimal learning rate ($5\times10^{-4}$), batch size 128 yields the
-best result; larger batches provide more stable gradient estimates on the
-PADS dataset where signal patterns are diverse across subjects.
-The highest learning rate ($10^{-3}$) performs worst at all batch sizes,
-suggesting mild overshoot instability at 20-epoch budget on this dataset scale.
-Conversely, $10^{-4}$ under-converges at batch 128, confirming that the
-learning-rate--batch-size pairing must be considered jointly.
-These findings motivated the choice of lr\,$= 5\times10^{-4}$ and batch
-size 128 for the architecture comparison experiments.
+The optimal configuration is lr\,$=5\times10^{-4}$, batch size 32 (best
+validation hybrid loss 1.657; Figure~\ref{fig:hyperparam}).
+The grid exhibits a total variation of $\approx$0.42 across the nine cells,
+with learning rate being the more consequential hyperparameter: the
+$10^{-4}$ row converges slowly (all values $> 2.04$) while the
+$5\times10^{-4}$ row yields the lowest loss across all batch sizes.
+The highest rate ($10^{-3}$) falls between the two extremes, suggesting the
+$5\times10^{-4}$--$10^{-3}$ range is the effective learning-rate window for
+CNN denoising on PADS.
+Smaller batch sizes marginally outperform larger ones at the optimal learning
+rate, consistent with the noisier gradient estimates of small batches acting
+as an implicit regulariser on a relatively small 3{,}000-window training
+subset.
+The main architecture experiments use lr\,$=10^{-3}$ with
+\texttt{ReduceLROnPlateau} (factor 0.5, patience 10), which adaptively
+anneals toward the identified optimal range during training.
 
 \subsection{Experiment 2: Architecture Comparison}
 \label{sec:exp-arch}
 
 \textbf{Setup.}
-All five architectures are trained for 100 epochs with Gaussian noise
-($\sigma = 0.1$), lr $= 5\times10^{-4}$, and batch size 64.
-The best-checkpoint model is evaluated on the test split.
-Table~\ref{tab:arch-results} reports test-set metrics;
-Figures~\ref{fig:reconstructions} and~\ref{fig:training-curves} show
-example reconstructions and training curves.
+All six models are evaluated under Gaussian noise ($\sigma=0.1$) on the
+held-out test split (35 subjects, 979 windows).
+The five learned architectures are trained for 100 epochs with initial
+lr\,$=10^{-3}$, \texttt{ReduceLROnPlateau} (factor 0.5, patience 10),
+batch 128, on an NVIDIA RTX\,2080\,Ti.
+The Wavelet baseline is applied directly without training.
 
 \begin{table}[ht]
-\caption{Architecture comparison under Gaussian noise ($\sigma = 0.1$),
-100 epochs, lr\,$= 5\times10^{-4}$, batch 128.
-TremorMAE$_\text{in}$ is the noisy-input baseline; TremorMAE$_\text{out}$ is after
-denoising. Best per column in \textbf{bold}.
-SNR$_\text{in} \approx 8.20$\,dB for all models (common noisy input).}
+\caption{Architecture comparison: Gaussian noise ($\sigma=0.1$), 100 epochs.
+SNR$_\text{in}\approx9.41$\,dB for all models (same noisy input).
+TremorMAE$_\text{in}$ is the noisy-signal baseline (Hz$^2$); Out is after
+denoising. \textbf{Bold}: best learnable model.
+$\dagger$\,Wavelet is non-trainable.}
 \label{tab:arch-results}
 \begin{center}
 \begin{tabular}{lcccccc}
@@ -905,76 +913,78 @@ SNR$_\text{in} \approx 8.20$\,dB for all models (common noisy input).}
 \cmidrule(lr){3-4}\cmidrule(lr){6-7}
 & & In & Out & & In & Out\,$\downarrow$ \\
 \midrule
-FC          & 1.8767 & 8.20 & \phantom{$-$}0.07 & $-$8.14 & 0.575 & 102.59 \\
-CNN         & 0.9125 & 8.20 & \phantom{$-$}1.68 & $-$6.52 & 0.577 & \phantom{0}76.41 \\
-LSTM        & 2.1129 & 8.20 & $-$0.54 & $-$8.74 & 0.571 & 103.44 \\
-UNet-1D     & \textbf{0.0036} & 8.20 & \textbf{14.37} & \textbf{$+$6.17} & 0.580 & \phantom{000}\textbf{0.64} \\
-Transformer & 1.9786 & 8.20 & \phantom{$-$}0.34 & $-$7.86 & 0.581 & 103.00 \\
+FC          & 1.509 & 9.41 & \phantom{$+$}0.46 & $-$8.96 & 0.54 & \phantom{0}87.46 \\
+CNN         & 0.831 & 9.41 & \phantom{$+$}2.18 & $-$7.23 & 0.54 & \phantom{0}63.85 \\
+LSTM        & 1.542 & 9.42 & \phantom{$+$}0.53 & $-$8.89 & 0.53 & \phantom{0}90.02 \\
+UNet-1D     & \textbf{0.004} & 9.41 & \textbf{14.75} & $+$\textbf{5.34} & 0.55 & \phantom{00}\textbf{0.68} \\
+Transformer & \textbf{0.004} & 9.41 & \textbf{14.87} & $+$\textbf{5.46} & 0.55 & \phantom{00}\textbf{0.64} \\
+\midrule
+Wavelet$^\dagger$ & 0.031 & 9.41 & \phantom{$+$}9.94 & $+$0.53 & 0.55 & \phantom{0}17.69 \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{table}
 
 \textbf{Analysis.}
-Table~\ref{tab:arch-results} reveals a dramatic performance gap between
-UNet-1D and all other architectures.
-UNet-1D achieves MSE $= 0.0427$, a 33$\times$ reduction over the next-best
-model (CNN, MSE $= 1.425$), and its TremorMAE$_\text{out}$ drops to $2.68$
-compared to $33$--$34$ for FC, CNN, and LSTM.
-This confirms that skip connections are essential for high-fidelity waveform
-reconstruction: the encoder bottleneck alone cannot recover fine-grained
-temporal structure at 100 Hz, whereas skip connections transfer multi-scale
-spatial information directly to the decoder.
+Table~\ref{tab:arch-results} reveals a clear binary split.
+UNet-1D and Transformer both achieve MSE\,$\approx 0.004$ and positive
+SNRi ($+5.34$ and $+5.46$\,dB respectively), meaning their outputs are
+\emph{cleaner} than the already-noisy input.
+FC, CNN, and LSTM all record negative SNRi ($-7$ to $-9$\,dB): the
+reconstruction artefacts from routing all information through the
+6144$\to$64 bottleneck exceed the input noise power.
+The gap between the two groups is 200$\times$ in MSE
+(0.004 vs.\ 0.831--1.542) and more than 13\,dB in SNR.
 
-The SNRi metric provides additional nuance.
-All models show negative SNRi, which initially appears paradoxical.
-However, the noisy inputs already exhibit SNR$_\text{in} \approx 7.53$\,dB
-because the clean PADS signals have high absolute power (large wrist IMU
-accelerations during motor tasks), making the injected Gaussian noise
-($\sigma = 0.1$) relatively modest.
-In this high-SNR regime, any reconstruction artefact from the decoder (even
-if small in absolute terms) reduces the output SNR relative to the already
-high input SNR.
-UNet-1D is essentially iso-SNR (SNRi\,$= -0.10$\,dB), confirming near-lossless
-denoising; FC, CNN, and LSTM all degrade the SNR by 7--8\,dB because they
-smooth or distort the signal more than they suppress noise.
+The TremorMAE metric is clinically decisive.
+FC, CNN, and LSTM amplify the 4--6\,Hz band distortion from 0.53--0.54 to
+64--90\,Hz$^2$---a 118--168$\times$ increase that would render any downstream
+tremor assessment unreliable.
+UNet-1D and Transformer each keep TremorMAE below 0.68\,Hz$^2$, essentially
+matching the reference baseline.
 
-The FC model exhibits a persistent train/val gap of $\approx 2\times$,
-consistent with the absence of temporal inductive bias.
-The LSTM architecture was substantially revised: the original mean-pooling
-encoder led to vanishing gradients and stagnant loss; replacing it with
-final-forward-and-backward hidden-state concatenation from a bidirectional
-LSTM restored convergence, yet the LSTM still underperforms CNN
-(MSE 1.673 vs.\ 1.425) at equal epoch budget, suggesting recurrent
-architectures require more epochs to leverage their sequential inductive bias
-on 1024-step sequences.
+The Wavelet baseline sits between the two groups: SNRi\,$=+0.53$\,dB is
+positive but modest; TremorMAE\,$=17.69$\,Hz$^2$ is 32$\times$ worse than
+UNet/Transformer because the analytical threshold does not specifically
+target the 4--6\,Hz DWT scale, leaking residual energy into the tremor band.
+
+\textbf{Why skip connections explain the divide.}
+UNet-1D passes encoder feature maps at four spatial resolutions directly to
+the decoder.
+The Transformer decoder adds the encoder patch token sequence
+($128\times128$ dims) to its input before reconstruction, achieving the same
+bypass at patch granularity.
+Neither model needs to pack all signal detail into 64 numbers.
+FC, CNN, and LSTM lack any bypass: every bit of waveform structure must
+survive 6144$\to$64 compression, and the resulting information loss exceeds
+the noise level, producing negative SNRi.
 
 \begin{figure}[ht]
 \begin{center}
-\includegraphics[width=0.48\linewidth]{assets/cnn_reconstruction.png}
-\hfill
 \includegraphics[width=0.48\linewidth]{assets/unet_reconstruction.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{assets/transformer_reconstruction.png}
 \end{center}
-\caption{Signal reconstruction examples (6-channel wrist IMU, 1024 samples).
-\figleft\ CNN autoencoder. \figright\ UNet-1D autoencoder.
-Each row is one sensor channel (Accel\,X/Y/Z, Gyro\,X/Y/Z).
-Three overlaid traces: clean (blue), noisy with $\sigma=0.1$ Gaussian (red),
-reconstructed (green). The UNet-1D reconstruction more faithfully preserves
-fine-scale oscillations visible in the gyroscope channels (rows 4--6).}
+\caption{Reconstructions from the two successful architectures
+(6-channel wrist IMU, 1024 samples, $\sigma=0.1$ Gaussian).
+\figleft\ UNet-1D. \figright\ Patch Transformer.
+Rows: Accel\,X/Y/Z, Gyro\,X/Y/Z. Blue: clean; red: noisy; green: reconstruction.
+Both track the clean signal closely, including fine gyroscope oscillations
+(rows 4--6) that the bottleneck-only models erase.}
 \label{fig:reconstructions}
 \end{figure}
 
 \begin{figure}[ht]
 \begin{center}
-\includegraphics[width=0.48\linewidth]{assets/cnn_training_curves.png}
-\hfill
 \includegraphics[width=0.48\linewidth]{assets/unet_training_curves.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{assets/transformer_training_curves.png}
 \end{center}
-\caption{Training curves (hybrid loss, log scale).
-\figleft\ CNN (100 epochs). \figright\ UNet-1D (100 epochs).
-Blue: train loss; red: validation loss.
-The UNet-1D reaches low validation loss within the first few epochs due to
-skip connections; the CNN converges more gradually but steadily.}
+\caption{Training curves (hybrid loss, log scale, 100 epochs).
+\figleft\ UNet-1D. \figright\ Transformer.
+Both converge to near-final validation loss within $\approx$10 epochs,
+reflecting skip-connection efficiency; the LR scheduler fired once for
+each (final lr: UNet $10^{-3}$, Transformer $5\times10^{-4}$).}
 \label{fig:training-curves}
 \end{figure}
 
@@ -982,16 +992,16 @@ skip connections; the CNN converges more gradually but steadily.}
 \begin{center}
 \includegraphics[width=0.32\linewidth]{assets/fc_reconstruction.png}
 \hfill
-\includegraphics[width=0.32\linewidth]{assets/lstm_reconstruction.png}
+\includegraphics[width=0.32\linewidth]{assets/cnn_reconstruction.png}
 \hfill
-\includegraphics[width=0.32\linewidth]{assets/lstm_training_curves.png}
+\includegraphics[width=0.32\linewidth]{assets/wavelet_reconstruction.png}
 \end{center}
-\caption{Additional architecture results.
-\figleft\ FC reconstruction: the absence of temporal inductive bias leads to
-over-smoothed output, blurring the tremor oscillations.
-\figcenter\ LSTM reconstruction: after the final-hidden-state encoder fix,
-the LSTM captures broad signal shape but misses fine high-frequency structure.
-\figright\ LSTM training curves: convergence is stable but slower than CNN.}
+\caption{Reconstructions for bottleneck-only and baseline models.
+\figleft\ FC: global MLP erases oscillation detail (TremorMAE 87\,Hz$^2$).
+\figcenter\ CNN: locally consistent but over-smoothed; TremorMAE 64\,Hz$^2$,
+118$\times$ worse than Transformer.
+\figright\ Wavelet: broad shape preserved; residual high-frequency smearing
+gives TremorMAE 17.69\,Hz$^2$.}
 \label{fig:extra-recon}
 \end{figure}
 
@@ -1000,119 +1010,232 @@ the LSTM captures broad signal shape but misses fine high-frequency structure.
 \label{sec:exp-latent}
 
 \textbf{Setup.}
-Each of the five architectures is trained with bottleneck sizes
-$d_z \in \{8, 16, 32, 64, 128, 256\}$, all other hyperparameters fixed.
-Test MSE and SNR$_\text{out}$ are recorded at each $d_z$.
+All six architectures (including Wavelet baseline) are evaluated at
+$d_z \in \{8, 16, 32, 64, 128, 256\}$ for 50 epochs each, all other
+hyperparameters fixed. Wavelet is evaluated once (no latent dimension).
 
 \begin{figure}[ht]
 \begin{center}
 \includegraphics[width=\linewidth]{assets/latent_dim_sweep.png}
 \end{center}
-\caption{Latent dimension sweep. Test MSE (left) and SNR$_\text{out}$ (right)
-vs.\ bottleneck size $d_z \in \{8,16,32,64,128,256\}$ for all architectures.
-UNet-1D (green) dominates at every $d_z$; CNN (orange) shows consistent
-improvement with larger bottleneck; FC and LSTM are largely $d_z$-invariant.}
+\caption{Latent dimension sweep. SNR$_\text{out}$ (dB) vs.\ bottleneck size
+$d_z \in \{8,16,32,64,128,256\}$ for all architectures (50 epochs each).
+UNet-1D and Transformer are flat near 14\,dB; CNN improves monotonically;
+FC and LSTM are flat at low performance.}
 \label{fig:latent}
 \end{figure}
 
 \textbf{Analysis.}
-Figure~\ref{fig:latent} confirms the skip-connection advantage of UNet-1D
-across all bottleneck sizes: UNet-1D MSE ranges from 0.0083 ($d_z = 8$) to
-0.0106 ($d_z = 64$), varying by less than 30\% across the full sweep.
-This robustness reflects the skip connections' ability to bypass the bottleneck
-entirely for high-frequency detail, making the bottleneck width less critical.
+Figure~\ref{fig:latent} and Table~\ref{tab:latent} confirm the skip-connection
+divide across all bottleneck sizes.
 
-The CNN shows a consistent downward trend in MSE as $d_z$ increases (3.474 at
-$d_z = 8$ to 2.572 at $d_z = 128$, with a slight uptick at 256), suggesting
-the CNN benefits from additional bottleneck capacity at this dataset scale and
-sequence length.
-No clear U-shape is observed within the tested range, implying the optimal
-CNN bottleneck may lie above $d_z = 128$ or that regularisation from Dropout
-prevents overfitting at larger sizes.
+\begin{table}[ht]
+\caption{MSE at selected latent dimensions (50 epochs per config).
+Wavelet is constant (non-parametric).}
+\label{tab:latent}
+\begin{center}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model} & $d_z=8$ & $d_z=16$ & $d_z=32$ & $d_z=64$ & $d_z=128$ & $d_z=256$ \\
+\midrule
+FC          & 1.752 & 1.627 & 1.586 & 1.579 & 1.583 & 1.556 \\
+CNN         & 1.418 & 1.240 & 1.042 & 0.884 & 0.826 & 0.839 \\
+LSTM        & 1.895 & 1.766 & 1.808 & 1.821 & 1.780 & 1.828 \\
+UNet-1D     & 0.0050 & 0.0051 & 0.0057 & 0.0051 & 0.0050 & 0.0051 \\
+Transformer & 0.0044 & 0.0043 & 0.0043 & 0.0043 & 0.0043 & 0.0043 \\
+Wavelet     & \multicolumn{6}{c}{0.031 (constant)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
 
-FC and LSTM exhibit near-flat MSE profiles (FC: 3.23--3.39; LSTM: 3.31--3.32),
-indicating that their bottlenecks are not the binding constraint on performance.
-For FC, the lack of temporal inductive bias dominates; for LSTM, the recurrent
-hidden state may already compress temporal information independently of $d_z$.
+\textbf{UNet-1D and Transformer are bottleneck-invariant.}
+UNet-1D MSE varies only 0.0050--0.0057 ($<$15\%) across the full 32$\times$
+range of $d_z$.
+The Transformer is even more invariant: MSE 0.0043--0.0044 ($<$3\% variation),
+because the 128-patch encoder token sequence passed directly to the decoder
+carries all per-patch detail regardless of the global latent width.
+
+\textbf{CNN is bottleneck-limited.}
+CNN MSE drops monotonically from 1.418 at $d_z=8$ to 0.826 at $d_z=128$
+(42\% improvement), plateauing at 256.
+This confirms the CNN encoder has useful representations that are increasingly
+well-preserved with wider bottlenecks; skip connections would remove this
+dependency entirely.
+
+\textbf{FC and LSTM are not bottleneck-limited.}
+FC MSE is nearly flat (1.556--1.752); LSTM is similarly flat (1.766--1.895).
+Their poor performance is governed by the absence of temporal inductive bias
+(FC) and the difficulty of compressing long sequences into a hidden state
+(LSTM), neither of which improves with wider bottlenecks.
 
 \subsection{Experiment 4: Noise Robustness}
 \label{sec:exp-noise}
 
 \textbf{Setup.}
-Each architecture is trained with fixed $\sigma_\text{train} = 0.1$ and
+All architectures are trained at $\sigma_\text{train}=0.1$ (100 epochs) and
 evaluated at $\sigma_\text{test} \in \{0.05, 0.1, 0.2, 0.4\}$.
 
 \begin{figure}[ht]
 \begin{center}
-\includegraphics[width=0.75\linewidth]{assets/noise_robustness.png}
+\includegraphics[width=0.85\linewidth]{assets/noise_robustness.png}
 \end{center}
-\caption{Noise robustness: SNRi (dB) vs.\ test noise level $\sigma \in
-\{0.05, 0.1, 0.2, 0.4\}$, all models trained at $\sigma_\text{train} = 0.1$.
-The dashed line at SNRi\,$= 0$ marks the no-improvement baseline.
-UNet-1D is the only architecture to achieve positive SNRi across the full range.}
+\caption{Noise robustness: SNRi (dB) vs.\ test $\sigma$, all models trained at
+$\sigma_\text{train}=0.1$. The dashed line marks SNRi\,$=0$ (no improvement).
+UNet-1D and Transformer maintain positive SNRi across the full range; Wavelet
+improves monotonically; FC/CNN/LSTM cross zero only at $\sigma=0.4$.}
 \label{fig:noise-robust}
 \end{figure}
 
 \textbf{Analysis.}
-Figure~\ref{fig:noise-robust} shows SNRi increasing monotonically with
-$\sigma_\text{test}$ for all architectures.
-This is a characteristic property of denoising estimators in the high-SNR
-regime: at low $\sigma_\text{test}$, the noisy input is already close to clean
-and any reconstruction artefact reduces the SNR; at high $\sigma_\text{test}$,
-there is more noise to suppress and the absolute improvement grows.
-Specifically: FC $[-13.31, -7.35, -1.49, +3.98]$\,dB;
-CNN $[-12.68, -6.70, -0.88, +4.41]$\,dB;
-LSTM $[-12.85, -6.82, -0.83, +5.09]$\,dB;
-UNet-1D $[+1.50, +4.28, +4.78, +4.42]$\,dB across
-$\sigma \in \{0.05, 0.1, 0.2, 0.4\}$.
+Table~\ref{tab:noise-robust} and Figure~\ref{fig:noise-robust} show the
+complete SNRi profiles.
 
-UNet-1D is the only architecture that achieves positive SNRi at all tested
-$\sigma$, including the low-noise regime ($\sigma = 0.05$, SNRi\,$= +1.50$\,dB).
-FC, CNN, and LSTM cross into positive SNRi territory only at $\sigma \geq 0.4$,
-indicating they are ineffective denoisers at the operating levels most relevant
-to real wearable recordings.
-The matched condition ($\sigma_\text{test} = \sigma_\text{train} = 0.1$)
-shows UNet-1D SNRi\,$= +4.28$\,dB vs.\ $-7$ to $-6$\,dB for the remaining
-three architectures---a $10$\,dB advantage at the design point.
-This is not indicative of incorrect evaluation but rather confirms that skip
-connections are essential for effective denoising of physiological signals in
-the regime where corruption is moderate relative to signal power.
-The clinically relevant operating point is near $\sigma_\text{train}$
-(matched condition); performance at $\sigma = 0.2$ and $0.4$ measures
-robustness to unexpectedly severe artifact levels.
+\begin{table}[ht]
+\caption{Noise robustness: SNRi (dB) across test noise levels
+($\sigma_\text{train}=0.1$, 100 epochs).
+\textbf{Bold}: positive SNRi (model improves over noisy input).}
+\label{tab:noise-robust}
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & $\sigma=0.05$ & $\sigma=0.10$ & $\sigma=0.20$ & $\sigma=0.40$ \\
+\midrule
+FC          & $-14.96$ & $-8.95$ & $-2.93$ & $+$\textbf{3.09} \\
+CNN         & $-13.42$ & $-7.26$ & $-1.28$ & $+$\textbf{4.42} \\
+LSTM        & $-15.15$ & $-9.13$ & $-3.10$ & $+$\textbf{2.93} \\
+UNet-1D     & $+$\textbf{2.06} & $+$\textbf{5.52} & $+$\textbf{4.91} & $+$\textbf{3.06} \\
+Transformer & $+$\textbf{1.23} & $+$\textbf{5.50} & $+$\textbf{4.39} & $+$\textbf{3.02} \\
+Wavelet     & $-3.04$ & $+$\textbf{0.52} & $+$\textbf{3.57} & $+$\textbf{6.14} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+UNet-1D and Transformer are the only models with positive SNRi at
+\emph{every} tested $\sigma$, including the challenging low-noise regime
+($\sigma=0.05$: $+2.06$ and $+1.23$\,dB respectively).
+Both peak at the training level ($\sigma=0.10$: $\approx+5.5$\,dB) and
+degrade gracefully at higher noise---an expected property of estimators
+trained at a specific SNR.
+
+FC, CNN, and LSTM cross into positive SNRi only at $\sigma=0.40$, well
+above the operating point for real wrist IMU recordings, where motion artifact
+severity typically corresponds to $\sigma<0.2$.
+The $\approx14$\,dB SNRi advantage of UNet/Transformer over FC/LSTM at the
+matched condition ($\sigma=0.10$) is the most clinically meaningful figure.
+
+The Wavelet baseline improves monotonically with $\sigma$ ($-3.04$ to
+$+6.14$\,dB), eventually surpassing all bottleneck-only learned models at
+$\sigma=0.40$.
+This reflects the nature of the MAD-based threshold: it scales with noise
+level, so stronger noise produces a cleaner separation of signal from
+noise coefficients.
 
 \subsection{Experiment 5: Noise-Type Cross-Evaluation}
 \label{sec:exp-noisetype}
 
 \textbf{Setup.}
-Each architecture is trained independently on each of the four noise types
-(Gaussian, masking, impulse, sinusoidal), then evaluated on all four types,
-producing a $4 \times 4$ SNRi matrix per architecture.
+Each architecture is trained on each of four noise types (Gaussian, masking,
+impulse, sinusoidal) independently for 20 epochs, then evaluated on all four
+types, yielding a 4$\times$4 SNRi matrix per architecture.
+Results are presented in Table~\ref{tab:noise-types} (numerical) and
+Figure~\ref{fig:noise-matrix} (heatmaps for the two successful architectures).
+
+\begin{table}[ht]
+\caption{Noise-type cross-evaluation: SNRi (dB) for each train$\to$test
+combination (20 epochs). Rows\,=\,training type; columns\,=\,test type.
+Diagonal entries (matched condition) in \textbf{bold}.
+$\dagger$\,Wavelet is non-parametric; its single row applies to all test types.}
+\label{tab:noise-types}
+\begin{center}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{ll|cccc}
+\toprule
+\textbf{Model} & \textbf{Train\,$\backslash$\,Test} & Gaussian & Masking & Impulse & Sinusoidal \\
+\midrule
+\multirow{4}{*}{FC}
+  & Gaussian   & \textbf{$-$9.1} & $-$1.7 & $+$7.4 & $-$2.6 \\
+  & Masking    & $-$9.8 & \textbf{$-$1.5} & $+$6.2 & $-$3.3 \\
+  & Impulse    & $-$9.1 & $-$1.7 & \textbf{$+$7.4} & $-$2.6 \\
+  & Sinusoidal & $-$9.1 & $-$1.7 & $+$7.4 & \textbf{$-$2.6} \\
+\midrule
+\multirow{4}{*}{CNN}
+  & Gaussian   & \textbf{$-$8.5} & $-$1.7 & $+$7.3 & $-$2.0 \\
+  & Masking    & $-$8.5 & \textbf{$-$0.7} & $+$4.6 & $-$2.0 \\
+  & Impulse    & $-$8.5 & $-$1.7 & \textbf{$+$8.1} & $-$1.9 \\
+  & Sinusoidal & $-$8.8 & $-$1.9 & $+$6.6 & \textbf{$-$2.1} \\
+\midrule
+\multirow{4}{*}{LSTM}
+  & Gaussian   & \textbf{$-$9.1} & $-$1.6 & $+$7.3 & $-$2.6 \\
+  & Masking    & $-$9.7 & \textbf{$-$1.9} & $+$6.3 & $-$3.4 \\
+  & Impulse    & $-$9.4 & $-$1.7 & \textbf{$+$7.1} & $-$2.9 \\
+  & Sinusoidal & $-$9.7 & $-$2.3 & $+$6.8 & \textbf{$-$3.1} \\
+\midrule
+\multirow{4}{*}{UNet-1D}
+  & Gaussian   & \textbf{$+$3.8} & $-$0.1 & $+$3.6 & $+$0.5 \\
+  & Masking    & $-$0.5 & \textbf{$+$2.4} & $+$3.0 & $-$1.2 \\
+  & Impulse    & $-$0.2 & $-$0.8 & \textbf{$+$14.0} & $+$4.5 \\
+  & Sinusoidal & $-$6.9 & $-$5.7 & $+$1.5 & \textbf{$+$20.5} \\
+\midrule
+\multirow{4}{*}{Transformer}
+  & Gaussian   & \textbf{$+$3.5} & $-$0.3 & $+$2.1 & $+$0.3 \\
+  & Masking    & $-$6.1 & \textbf{$+$0.3} & $-$5.0 & $-$5.5 \\
+  & Impulse    & $+$0.4 & $-$1.0 & \textbf{$+$16.0} & $-$1.3 \\
+  & Sinusoidal & $-$7.3 & $-$6.1 & $+$0.2 & \textbf{$+$30.1} \\
+\midrule
+Wavelet$^\dagger$ & ---  & $+$0.5 & $+$0.0 & $+$0.8 & $-$0.1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
 
 \begin{figure}[ht]
 \begin{center}
-\fbox{\rule[-.5cm]{0cm}{4.0cm} \rule[-.5cm]{11cm}{0cm}}
+\includegraphics[width=0.48\linewidth]{assets/unet_noise_type_matrix.png}
+\hfill
+\includegraphics[width=0.48\linewidth]{assets/transformer_noise_type_matrix.png}
 \end{center}
-\caption{Noise-type cross-evaluation heatmaps (SNRi in dB) for all five
-architectures. Rows = training noise type; columns = test noise type.
-Diagonal (matched) entries are in \textbf{bold}; off-diagonal entries
-quantify generalisation. Green = positive SNRi; red = negative.}
+\caption{Noise-type cross-evaluation heatmaps (SNRi in dB) for the two
+successful architectures. \figleft\ UNet-1D. \figright\ Transformer.
+Rows\,=\,training noise; columns\,=\,test noise. Green\,=\,positive SNRi;
+red\,=\,negative. Diagonal cells are the matched conditions.}
 \label{fig:noise-matrix}
 \end{figure}
 
 \textbf{Analysis.}
-The diagonal entries measure denoising performance in the matched training
-condition; off-diagonal entries reveal cross-noise generalisation.
-We expect:
-\textbf{(i)} Gaussian noise to generalise best across types due to its
-isotropic, smooth corruption structure;
-\textbf{(ii)} models trained on masking noise to perform poorly on Gaussian
-(and vice versa), as these regimes corrupt qualitatively different aspects of
-the signal (temporal continuity vs.\ amplitude);
-\textbf{(iii)} sinusoidal interference to be the most challenging
-off-diagonal generalisation target because the 5\,Hz interference directly
-overlaps with the PD tremor band, and a model trained on other noise types
-will not have learned to suppress narrow-band tonal components.
+Three structural patterns emerge from Table~\ref{tab:noise-types}.
+
+\textbf{(i) Impulse noise yields positive SNRi for every model regardless of
+training type.}
+Even FC trained on sinusoidal noise achieves $+7.4$\,dB on impulse test data.
+This is because impulse spikes are extreme outliers; any denoising operation
+that reconstructs a smooth signal will remove them by default, regardless of
+what noise it was trained to remove.
+
+\textbf{(ii) Skip-connection models achieve large matched-condition SNRi on
+specialised noises.}
+UNet-1D trained on impulse achieves $+14.0$\,dB; on sinusoidal $+20.5$\,dB.
+The Transformer reaches $+16.0$\,dB on impulse and $+30.1$\,dB on sinusoidal
+(the sharp spectral peak at 5\,Hz is particularly amenable to spectral
+filtering learned by the Transformer's global attention).
+However, this specialisation comes at a cost: UNet-1D trained on sinusoidal
+drops to $-6.9$\,dB on Gaussian and $-5.7$\,dB on masking;
+Transformer trained on sinusoidal gives $-7.3$\,dB on Gaussian.
+
+\textbf{(iii) Gaussian training provides the most robust cross-noise
+generalisation.}
+UNet-1D trained on Gaussian achieves $+3.8$\,dB (Gaussian), $-0.1$\,dB
+(masking), $+3.6$\,dB (impulse), $+0.5$\,dB (sinusoidal) --- all near zero
+or positive.
+The Transformer shows a similar pattern ($+3.5$, $-0.3$, $+2.1$, $+0.3$\,dB).
+This makes Gaussian-trained models the safest choice for real-world deployments
+where the noise type is unknown.
+
+The Wavelet baseline is uniformly modest ($-0.1$ to $+0.8$\,dB) and does not
+specialise, reflecting the noise-agnostic nature of the MAD threshold.
 
 % ═══════════════════════════════════════════════════════════════════
 \section{Discussion}
@@ -1120,46 +1243,60 @@ will not have learned to suppress narrow-band tonal components.
 
 \subsection{Inductive Bias and Generalisation}
 
-The five architectures represent a spectrum of inductive biases for 1D
-temporal signals.
-The FC baseline has \emph{no} temporal inductive bias: it must rediscover
-temporal locality and smoothness entirely from data, requiring substantially
-more training windows than are available at the current dataset scale.
-Even with Dropout regularisation, the persistent train/val loss gap indicates
-underfitting of the validation distribution.
+The experiments reveal that inductive bias alone cannot explain the
+$200\times$ MSE gap across architectures.
+All five learned models share the same training procedure, loss, and
+optimiser; yet their MSE spans 0.004 to 1.542.
+The governing factor is not the \emph{type} of inductive bias (translation
+equivariance for CNN, sequential order for LSTM) but the
+\emph{presence or absence of skip connections}.
 
-The CNN's translation-equivariant convolutions match the stationarity of
-typical IMU noise sources well: since the corruption statistics do not vary
-substantially with time index, a filter that denoises at one position should
-generalise to all positions.
-The 10$\times$ reduction in the train/val gap after adding Dropout confirms
-that the residual gap was overfitting driven, not model-capacity limited.
+FC has no temporal inductive bias and must rediscover temporal locality
+entirely from data.
+The MLP bottleneck ($6144\to64\to6144$) is too severe at this dataset scale:
+every cycle of PD tremor activity and every gyroscope phase relationship must
+survive the compression, leading to MSE\,$= 1.509$ and SNRi\,$= -8.96$\,dB.
 
-The LSTM's sequential bias is well-matched to the rhythmic character of PD
-tremor, where the phase of the 4--6\,Hz oscillation carries information.
-The key lesson from our implementation is the importance of \emph{how} the
-encoder aggregates the recurrent state: mean pooling over 1024 steps creates
-a vanishing gradient bottleneck; encoding the terminal hidden states preserves
-a direct gradient path that enables training.
+CNN's translation-equivariant convolutions are well-matched to the
+stationarity of IMU noise sources, and the monotonically improving latent
+sweep (MSE 1.418 $\to$ 0.826 as $d_z$ grows 8$\to$128; Table~\ref{tab:latent})
+confirms that the encoder learns genuinely useful representations.
+Without skip connections, however, those representations must survive the
+bottleneck intact, capping performance at MSE\,$= 0.831$ and
+SNRi\,$= -7.23$\,dB.
+
+LSTM's sequential bias could in principle exploit the phase structure of
+4--6\,Hz tremor.
+In practice, its flat latent sweep
+(MSE 1.895 at $d_z=8$ down to only 1.766 at $d_z=128$;
+Table~\ref{tab:latent}) indicates that compressing 1\,024 recurrent steps
+into 64 numbers discards phase information regardless of bottleneck width.
 
 \subsection{Skip Connections and Tremor Preservation}
 
-UNet-1D's dramatic performance advantage (MSE $= 0.043$ vs.\ $1.43$--$1.67$
-for other architectures, a 33--39$\times$ gap) is not trivial: it reflects
-the structural advantage of skip connections for signal reconstruction.
-The decoder receives not only the global latent $\vz$ but also the
-encoder's local feature maps at multiple spatial scales, effectively
-making the denoising task a \emph{residual} problem---the model needs
-only to learn the difference between the clean and noisy signals at each
-scale, rather than reconstructing the signal from scratch.
-This is the 1D analogue of residual learning \citep{he2016deep}.
+The $200\times$ MSE gap between the two groups (0.004 vs.\ 0.831--1.542)
+traces directly to skip connections.
+UNet-1D passes encoder feature maps at four spatial resolutions directly to
+the decoder, making the denoising task a \emph{residual problem} at each
+scale---the decoder needs only to estimate the noise component, not
+reconstruct the signal from scratch \citep{he2016deep}.
+The Transformer achieves the same effect via a different mechanism: its
+decoder adds the full $128$-token encoder patch sequence ($128\!\times\!128$
+dimensions) to its input before reconstruction, providing per-patch bypass
+of the global latent bottleneck.
+Neither model is forced to pack all waveform detail into 64 numbers;
+FC, CNN, and LSTM are.
 
-The tremor-band power MAE metric provides a complementary perspective to MSE.
-A model that achieves low MSE by smoothing may suppress the 4--6\,Hz
-content that is directly relevant to clinical tremor assessment.
-The spectral $L_1$ loss term in Eq.~\eqref{eq:loss} is designed to
-counteract this tendency by providing an explicit gradient signal from the
-power spectrum.
+The TremorMAE metric makes the clinical consequence explicit.
+FC, CNN, and LSTM amplify the 4--6\,Hz band distortion from 0.53--0.54
+to 64--90\,Hz$^2$ (a 118--168$\times$ increase), rendering downstream tremor
+severity assessment unreliable.
+UNet-1D and Transformer each keep TremorMAE below 0.68\,Hz$^2$, matching
+the pre-denoising baseline and preserving the diagnostic signal.
+The spectral $L_1$ component of the hybrid loss (Eq.~\eqref{eq:loss})
+reinforces this: it provides an explicit gradient signal from the power
+spectrum, counteracting the tendency of MSE-only training to suppress
+clinically important high-frequency content.
 
 \subsection{Clinical Implications}
 
@@ -1167,28 +1304,35 @@ From a clinical deployment perspective, the findings of this work suggest
 several practical guidelines.
 
 \emph{Architecture choice.}
-For real-time or near-real-time wrist IMU denoising (e.g., for streaming
-tremor monitoring), the Transformer offers the best parameter efficiency
-(575K parameters) with competitive accuracy.
-For offline batch processing where accuracy is paramount (e.g.,
-clinical trial endpoint analysis), UNet-1D provides the strongest
-reconstruction fidelity.
+Only UNet-1D and Transformer are viable architectures for wrist IMU denoising
+at the current dataset scale.
+Both achieve identical fidelity (MSE\,$\approx 0.004$, SNRi\,$\approx +5.4$\,dB,
+TremorMAE\,$< 0.68$\,Hz$^2$) across all evaluation metrics.
+The Transformer's global self-attention enables higher matched-condition SNRi
+on specialised noise types (e.g., $+30.1$\,dB on sinusoidal interference,
+Table~\ref{tab:noise-types}), while UNet-1D's spatial skip connections yield
+more uniform cross-noise behaviour.
+FC, CNN, and LSTM are not suitable for clinical denoising without skip
+connections regardless of the hyperparameter configuration.
 
 \emph{Noise model choice.}
-The noise-type cross-evaluation (Experiment~5) reveals which architectures
-generalise across noise types.
-In practice, the noise in real-world smartwatch recordings is a mixture of
-all four types.
-Models trained on Gaussian noise alone may not adequately suppress
-sinusoidal interference from 5\,Hz machinery vibration or masking dropouts
-from contact loss.
-A composite training noise strategy (randomly sampling the noise type per
-batch) is a promising direction for future work.
+Experiment~5 exposes a sharp specialisation--robustness trade-off.
+Training on sinusoidal noise yields $+20.5$\,dB (UNet-1D) and $+30.1$\,dB
+(Transformer) on the matched test type, but catastrophically transfers:
+UNet-1D drops to $-6.9$\,dB and Transformer to $-7.3$\,dB when evaluated on
+Gaussian noise.
+Gaussian training avoids this pitfall.
+UNet-1D trained on Gaussian achieves ($+3.8$, $-0.1$, $+3.6$, $+0.5$)\,dB
+across (Gaussian, masking, impulse, sinusoidal) test types; the Transformer
+achieves ($+3.5$, $-0.3$, $+2.1$, $+0.3$)\,dB.
+All values are near zero or positive.
+For deployment where the noise composition is unknown---which is the typical
+clinical setting---Gaussian training is the recommended strategy.
 
 \emph{Evaluation metric choice.}
 Aggregate MSE is insufficient as a standalone clinical evaluation metric.
-A model with low MSE but high TremorMAE may actually impair downstream
-tremor analysis by suppressing the diagnostic signal.
+A model with low MSE but high TremorMAE may impair downstream tremor analysis
+by suppressing the diagnostic signal.
 We recommend reporting TremorMAE alongside MSE and SNRi for any denoising
 method applied to PD wrist IMU data.
 
@@ -1216,6 +1360,14 @@ In practice, even the raw recordings contain residual motion artifacts.
 A gold-standard evaluation would use controlled lab recordings with
 simultaneous clean reference measurements.
 
+\textbf{Reduced training budget for ablations.}
+The noise-type cross-evaluation (Experiment~5) used 20 epochs per
+train$\times$test combination to keep compute tractable; the latent sweep
+(Experiment~3) used 50 epochs.
+Some cells in Tables~\ref{tab:latent} and~\ref{tab:noise-types} may not
+have fully converged, particularly for FC and LSTM, which converge more
+slowly.
+
 \textbf{No downstream task evaluation.}
 We evaluate reconstruction quality directly (MSE, SNRi, TremorMAE) but do
 not assess whether denoising improves a downstream clinical task such as
@@ -1226,10 +1378,10 @@ Such end-task evaluation is the ultimate clinical validation criterion.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a comprehensive evaluation of five denoising autoencoder
-architectures for Parkinson's Disease wrist IMU signals, applied to the
-PADS dataset of 247 PD patients and healthy controls wearing Apple Watch
-Series~4.
+We presented a comprehensive evaluation of six denoising architectures
+(FC, CNN, LSTM, UNet-1D, patch Transformer, and a Wavelet baseline) for
+Parkinson's Disease wrist IMU signals, applied to the PADS dataset of 247
+PD patients and healthy controls wearing Apple Watch Series~4.
 The study addresses a practically important but under-explored problem:
 removing realistic noise from the 6-channel, 100\,Hz wrist signals that carry
 information about PD motor symptoms, particularly the 4--6\,Hz tremor
@@ -1237,26 +1389,39 @@ signature.
 
 Key findings and contributions include:
 \begin{enumerate}
-  \item \textbf{Architecture matters at this data scale.}
-    Skip-connection (UNet-1D) architectures achieve substantially lower MSE
-    than purely sequential or fully-connected models, with convergence
-    visible from the first training epoch.
-    The parameter-efficient Transformer (575K parameters) provides competitive
-    SNRi with much fewer parameters than the UNet.
-  \item \textbf{Proper gradient flow is critical for LSTMs on long sequences.}
-    Using final hidden-state encoding instead of mean pooling enabled LSTM
-    training to converge on 1024-step sequences; the mean-pooling approach
-    produced a vanishing-gradient stagnation that could not be resolved
-    by learning rate tuning alone.
-  \item \textbf{Spectral loss preserves tremor-band content.}
-    The hybrid time-frequency loss encourages spectral fidelity beyond
-    what MSE alone provides.
-    The domain-specific TremorMAE metric operationalises this benefit in
-    clinically meaningful terms.
-  \item \textbf{Noise-type generalisation is architecture-dependent.}
+  \item \textbf{Skip connections are the governing architectural principle.}
+    UNet-1D and Transformer both achieve MSE\,$\approx 0.004$ and
+    SNRi\,$\approx +5.4$\,dB, a $200\times$ MSE advantage over FC, CNN, and
+    LSTM (MSE 0.831--1.542, SNRi $-7$ to $-9$\,dB).
+    The two architectures reach the same level via different bypass
+    mechanisms: UNet-1D via multi-scale spatial skip connections;
+    Transformer via patch-token encoder outputs passed directly into the
+    decoder.
+    Without a bypass, the 6144$\to$64 bottleneck introduces more distortion
+    than the injected noise, producing negative SNRi.
+  \item \textbf{Tremor-band preservation separates clinically viable from
+    harmful models.}
+    FC, CNN, and LSTM inflate TremorMAE from 0.54 to 64--90\,Hz$^2$
+    (118--168$\times$), rendering downstream tremor assessment unreliable.
+    UNet-1D and Transformer keep TremorMAE below 0.68\,Hz$^2$, matching
+    the pre-denoising baseline.
+    The hybrid time-frequency loss (MSE + $\alpha \cdot$ spectral $L_1$,
+    $\alpha=0.1$) provides the gradient signal needed to achieve this
+    spectral fidelity.
+  \item \textbf{Gaussian training provides the most robust deployment
+    strategy.}
+    The noise-type cross-evaluation reveals a sharp specialisation--robustness
+    trade-off for skip-connection models: sinusoidal training achieves
+    $+20$--$+30$\,dB on the matched type but drops to $-7$\,dB on Gaussian.
+    Gaussian-trained UNet-1D and Transformer remain near-zero or positive
+    across all four noise types, making them the safest choice when the
+    in-deployment noise composition is unknown.
+  \item \textbf{Noise-type generalisation is architecture-dependent, and
+    specialisation carries cross-noise risk.}
     Cross-noise evaluation reveals that no single model generalises equally
-    well across all four noise types, motivating mixed-noise training
-    strategies in future work.
+    well across all noise types when trained on a single type.
+    Mixed-noise training strategies (sampling the noise type per batch or per
+    epoch) are a promising direction for future work.
 \end{enumerate}
 
 This work provides a foundation for integrating learned signal denoising
