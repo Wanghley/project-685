@@ -1,0 +1,15 @@
+{
+  "exp": "latent",
+  "epochs": 50,
+  "lr": 0.001,
+  "batch": 128,
+  "tag": "latent_dcc",
+  "dataset": "pads",
+  "data_dir": "physionet.org/files/parkinsons-disease-smartwatch/1.0.0",
+  "wrist": "Both",
+  "window_size": 1024,
+  "num_channels": 6,
+  "latent_dim": 64,
+  "gaussian_sigma": 0.1,
+  "device": "cuda"
+}
