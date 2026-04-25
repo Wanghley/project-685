@@ -80,12 +80,6 @@ Lovedeep Gondara.
 \newblock In \emph{IEEE International Conference on Data Mining Workshops
   (ICDMW)}, pp.\  241--246, 2016.
 
-\bibitem[Goodfellow et~al.(2016)Goodfellow, Bengio, and
-  Courville]{goodfellow2016deep}
-Ian Goodfellow, Yoshua Bengio, and Aaron Courville.
-\newblock \emph{Deep Learning}.
-\newblock MIT Press, 2016.
-
 \bibitem[He et~al.(2016)He, Zhang, Ren, and Sun]{he2016deep}
 Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
 \newblock Deep residual learning for image recognition.
@@ -168,6 +162,13 @@ Werner Poewe, Klaus Seppi, Caroline~M Tanner, Glenda~M Halliday, Patrik
 \newblock Parkinson disease.
 \newblock \emph{Nature Reviews Disease Primers}, 3\penalty0 (1):\penalty0
   17013, 2017.
+
+\bibitem[Reaz et~al.(2006)Reaz, Hussain, and Mohd-Yasin]{reaz2007techniques}
+Mamun Bin~Ibne Reaz, M~S Hussain, and Faisal Mohd-Yasin.
+\newblock Techniques of {EMG} signal analysis: Detection, processing,
+  classification and applications.
+\newblock \emph{Biological Procedures Online}, 8\penalty0 (1):\penalty0 11--35,
+  2006.
 
 \bibitem[Rigas et~al.(2012)Rigas, Tzallas, Tsipouras, Bougia, Tripoliti, Baga,
   Fotiadis, Tsouli, and Konitsiotis]{rigas2012assessment}
